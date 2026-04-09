@@ -13,7 +13,7 @@ export default function LandingPage() {
   const [index, setIndex] = useState(0);
   const [isWaving, setIsWaving] = useState(false);
   const [isPlayingForward, setIsPlayingForward] = useState(true);
-  
+
   const forwardVideoRef = useRef<HTMLVideoElement>(null);
   const reverseVideoRef = useRef<HTMLVideoElement>(null);
 
@@ -49,13 +49,13 @@ export default function LandingPage() {
     const timer = setInterval(() => {
       // 1. 先啟動波浪效果
       setIsWaving(true);
-      
+
       // 2. 波浪跳動一段時間後（例如 600ms），切換文字
       setTimeout(() => {
         setIndex((prev) => (prev + 1) % words.length);
         setIsWaving(false);
       }, 600);
-      
+
     }, 3500); // 延長間隔，讓波浪與切換更有節奏感
     return () => clearInterval(timer);
   }, []);
@@ -82,7 +82,10 @@ export default function LandingPage() {
             <div className="bg-black p-2 rounded-xl">
               <Bot className="w-6 h-6 text-white" />
             </div>
-            <span className="text-xl font-black tracking-tighter text-black uppercase">Digital Manager</span>
+            <div className="flex flex-col">
+              <span className="text-xl font-black tracking-tighter text-black uppercase leading-none">DIGITAL MANAGER</span>
+              <span className="text-xs text-gray-500 font-light tracking-wide mt-1">您的 AI 數位店長</span>
+            </div>
           </div>
           <div className="flex items-center gap-8">
             <div className="hidden md:flex items-center gap-6 text-sm font-medium text-gray-500">
