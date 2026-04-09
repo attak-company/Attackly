@@ -1,0 +1,58 @@
+# 🔐 環境變數（最重要）
+.env*
+!.env.example
+frontend/.env.local
+
+# 📦 Node.js / Next.js
+node_modules/
+.next/
+out/
+build/
+
+# 🐍 Python / FastAPI
+__pycache__/
+*.py[cod]
+*.pyd
+
+# 虛擬環境
+.venv/
+venv/
+**/.venv/
+**/venv/
+backend/venv/
+
+# 🧠 AI / logs / cache
+logs/
+*.log
+.cache/
+temp/
+uploads/
+
+# 🧪 testing
+coverage/
+
+# 🧵 Yarn / pnpm
+.pnp.*
+.yarn/*
+!.yarn/patches
+!.yarn/plugins
+!.yarn/releases
+!.yarn/versions
+
+# 🧑‍💻 編輯器
+.vscode/
+.idea/
+
+# ☁️ deployment
+.vercel/
+
+# 🗑 系統垃圾
+.DS_Store
+Thumbs.db
+
+# 🔑 security / certificates
+*.pem
+
+# 🧾 TypeScript
+*.tsbuildinfo
+next-env.d.ts
