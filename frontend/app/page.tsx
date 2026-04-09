@@ -82,7 +82,10 @@ export default function LandingPage() {
             <div className="bg-black p-2 rounded-xl">
               <Bot className="w-6 h-6 text-white" />
             </div>
-            <span className="text-xl font-black tracking-tighter text-black uppercase">Digital Manager</span>
+            <div className="flex flex-col">
+              <span className="text-xl font-black tracking-tighter text-black uppercase leading-none">Digital Manager</span>
+              <span className="text-xs text-gray-500 font-light tracking-wide mt-1">數位電站</span>
+            </div>
           </div>
           <div className="flex items-center gap-8">
             <div className="hidden md:flex items-center gap-6 text-sm font-medium text-gray-500">
