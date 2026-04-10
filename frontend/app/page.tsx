@@ -3,7 +3,7 @@
 import { useEffect, useState, useRef } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import Link from "next/link";
-import { Bot, Calendar, MessageSquare, Shield, Zap, ArrowRight, CheckCircle2, Star, Globe, Clock } from "lucide-react";
+import { Bot, Calendar, MessageSquare, Shield, Zap, ArrowRight, CheckCircle2, Star, Globe, Clock, LayoutDashboard } from "lucide-react";
 
 const words = ["預約", "排程", "接單", "客服"];
 const staticText1 = "讓 AI 幫您";
@@ -86,7 +86,7 @@ export default function LandingPage() {
             />
             <div className="flex flex-col">
               <span className="text-xl font-black tracking-tighter text-black uppercase leading-none">Digital Manager</span>
-              <span className="text-xs text-gray-500 font-light tracking-wide mt-1">數位電站</span>
+              <span className="text-xs text-gray-500 font-light tracking-wide mt-1">您的 AI 數位店長</span>
             </div>
           </div>
           <div className="flex items-center gap-8">
@@ -213,37 +213,118 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* 痛點對比區 */}
+      <section className="py-32 px-6 bg-white">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-20">
+            <h2 className="text-4xl md:text-6xl font-black mb-6">傳統困境 vs AI 數位店長</h2>
+            <p className="text-xl text-gray-500 font-medium">選擇更智能的營運方式</p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+            {/* 傳統困境 - 左欄，較低對比度 */}
+            <div className="p-10 bg-gray-50 border border-gray-200 rounded-[32px]">
+              <h4 className="text-2xl font-bold mb-8 text-gray-400">傳統困境</h4>
+              <ul className="space-y-6">
+                {["漏接訊息", "客戶等待過久", "預約衝突", "半夜無人回覆"].map((item, i) => (
+                  <li key={i} className="flex items-center gap-3 font-medium text-gray-400 text-lg">
+                    <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center">
+                      <span className="text-gray-400 text-sm">✗</span>
+                    </div>
+                    {item}
+                  </li>
+                ))}
+              </ul>
+            </div>
+
+            {/* AI 數位店長 - 右欄，高對比白字，紅色點綴 */}
+            <div className="p-10 bg-black text-white rounded-[32px] shadow-2xl shadow-black/20">
+              <h4 className="text-2xl font-bold mb-8 text-white">AI 數位店長</h4>
+              <ul className="space-y-6">
+                <li className="flex items-center gap-3 font-bold text-white text-lg">
+                  <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center">
+                    <span className="text-white text-sm">✓</span>
+                  </div>
+                  <span className="text-white"><span className="text-red-500">0 秒</span>回應</span>
+                </li>
+                <li className="flex items-center gap-3 font-bold text-white text-lg">
+                  <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center">
+                    <span className="text-white text-sm">✓</span>
+                  </div>
+                  <span className="text-white"><span className="text-red-500">精準</span>識別需求</span>
+                </li>
+                <li className="flex items-center gap-3 font-bold text-white text-lg">
+                  <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center">
+                    <span className="text-white text-sm">✓</span>
+                  </div>
+                  <span className="text-white"><span className="text-red-500">自動</span>串接資料庫</span>
+                </li>
+                <li className="flex items-center gap-3 font-bold text-white text-lg">
+                  <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center">
+                    <span className="text-white text-sm">✓</span>
+                  </div>
+                  <span className="text-white"><span className="text-red-500">掌握</span>客流動態</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* 功能介紹 */}
-      <section id="features" className="py-32 bg-gray-50">
+      <section id="features" className="py-32 bg-black">
         <div className="max-w-7xl mx-auto px-6">
-          <div className="grid md:grid-cols-3 gap-12">
-            <div className="space-y-6">
-              <div className="w-16 h-16 bg-white border border-gray-200 rounded-2xl flex items-center justify-center shadow-sm">
-                <MessageSquare className="w-8 h-8" />
+          <div className="grid md:grid-cols-3 gap-8">
+            {/* 功能一：24/7 智慧導購店長 */}
+            <motion.div
+              initial={{ opacity: 0, y: 60 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: 0 }}
+              className="h-full p-8 bg-[#0A0A0A] border border-white/10 rounded-2xl hover:border-red-600 hover:-translate-y-2 hover:shadow-[0_10px_30px_-10px_rgba(255,0,0,0.3)] transition-all duration-300 group"
+            >
+              <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mb-6">
+                <MessageSquare className="w-8 h-8 text-white" />
               </div>
-              <h3 className="text-2xl font-bold">智能語義識別</h3>
-              <p className="text-gray-500 leading-relaxed font-medium">
-                不只是關鍵字匹配。我們的 AI 能理解客人的自然語言，無論是「明天下午三點」還是「下週三有空嗎」，都能精準處理。
+              <h3 className="text-2xl font-bold text-white mb-4">24/7 智慧導購店長</h3>
+              <p className="text-gray-400 leading-relaxed">
+                整合 Gemini 核心，深度學習您的價目表與知識庫。不只回覆問題，更能主動引導預約，讓服務不中斷。
               </p>
-            </div>
-            <div className="space-y-6">
-              <div className="w-16 h-16 bg-white border border-gray-200 rounded-2xl flex items-center justify-center shadow-sm">
-                <Calendar className="w-8 h-8" />
+            </motion.div>
+
+            {/* 功能二：視覺化經營看板 */}
+            <motion.div
+              initial={{ opacity: 0, y: 60 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: 0.2 }}
+              className="h-full p-8 bg-[#0A0A0A] border border-white/10 rounded-2xl hover:border-red-600 hover:-translate-y-2 hover:shadow-[0_10px_30px_-10px_rgba(255,0,0,0.3)] transition-all duration-300 group"
+            >
+              <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mb-6">
+                <LayoutDashboard className="w-8 h-8 text-white" />
               </div>
-              <h3 className="text-2xl font-bold">自動日程衝突檢查</h3>
-              <p className="text-gray-500 leading-relaxed font-medium">
-                AI 會自動對比您的工作時間與現有預約，推薦可用時段給客人，並在確認後即時寫入系統。
+              <h3 className="text-2xl font-bold text-white mb-4">視覺化經營看板</h3>
+              <p className="text-gray-400 leading-relaxed">
+                告別混亂訊息與紙本紀錄。一眼掌握今日動態與本週排程，精準預估客流高峰，提升店內翻桌率。
               </p>
-            </div>
-            <div className="space-y-6">
-              <div className="w-16 h-16 bg-white border border-gray-200 rounded-2xl flex items-center justify-center shadow-sm">
-                <Globe className="w-8 h-8" />
+            </motion.div>
+
+            {/* 功能三：零門檻閃電部署 */}
+            <motion.div
+              initial={{ opacity: 0, y: 60 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: 0.4 }}
+              className="h-full p-8 bg-[#0A0A0A] border border-white/10 rounded-2xl hover:border-red-600 hover:-translate-y-2 hover:shadow-[0_10px_30px_-10px_rgba(255,0,0,0.3)] transition-all duration-300 group"
+            >
+              <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mb-6">
+                <Zap className="w-8 h-8 text-white" />
               </div>
-              <h3 className="text-2xl font-bold">零門檻 LINE 整合</h3>
-              <p className="text-gray-500 leading-relaxed font-medium">
-                只需要填入 LINE API Key，5 分鐘內即可讓您的 LINE 官方帳號變成會賺錢的智慧店長。
+              <h3 className="text-2xl font-bold text-white mb-4">零門檻閃電部署</h3>
+              <p className="text-gray-400 leading-relaxed">
+                無需技術背景。只需貼上專屬密鑰，3 分鐘內完成全系統對接，讓您的店面瞬間升級 AI 模式。
               </p>
-            </div>
+            </motion.div>
           </div>
         </div>
       </section>
