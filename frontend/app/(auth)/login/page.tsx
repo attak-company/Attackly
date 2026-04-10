@@ -162,9 +162,11 @@ export default function LoginPage() {
       <div className="max-w-md w-full bg-white rounded-2xl shadow-xl overflow-hidden">
         <div className="p-8">
           <div className="flex justify-center mb-8">
-            <div className="bg-black p-3 rounded-xl">
-              <Bot className="w-8 h-8 text-white" />
-            </div>
+            <img 
+              src="/Logo.png" 
+              alt="Logo" 
+              className="w-24 h-24 object-contain"
+            />
           </div>
           <h2 className="text-2xl font-bold text-center text-gray-900 mb-2">歡迎回來</h2>
           <p className="text-gray-500 text-center mb-8">登入您的數位店長帳號</p>
