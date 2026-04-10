@@ -16,6 +16,7 @@ export default function LoginPage() {
   const [userEmail, setUserEmail] = useState<string | null>(null);
   const [codeSent, setCodeSent] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
+  const [savedPassword, setSavedPassword] = useState<string | null>(null);
   const router = useRouter();
   const supabase = createClient();
 
@@ -66,11 +67,18 @@ export default function LoginPage() {
       return;
     }
 
-    // Keep the session active after password verification
+    // Save password for later re-login after code verification
+    setSavedPassword(password);
+
+    // Immediately sign out since we only wanted to verify the password
+    await supabase.auth.signOut();
 
     // Password is correct, now send verification code
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/auth/send-login-code`, {
+      const apiUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/auth/send-login-code`;
+      console.log("Sending login code to:", apiUrl);
+      
+      const response = await fetch(apiUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -78,7 +86,12 @@ export default function LoginPage() {
         body: JSON.stringify({ email }),
       });
 
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
       const data = await response.json();
+      console.log("Response data:", data);
 
       if (data.success) {
         setUserEmail(email);
@@ -88,6 +101,7 @@ export default function LoginPage() {
         setError("發送驗證碼失敗");
       }
     } catch (err) {
+      console.error("Error sending login code:", err);
       setError("發送驗證碼失敗，請稍後再試");
     }
 
@@ -106,7 +120,7 @@ export default function LoginPage() {
     }
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/auth/verify-login-code`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/auth/verify-login-code`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -120,6 +134,20 @@ export default function LoginPage() {
       const data = await response.json();
 
       if (data.success) {
+        // 使用保存的密碼重新登入建立 session
+        if (userEmail && savedPassword) {
+          const { error: signInError } = await supabase.auth.signInWithPassword({
+            email: userEmail,
+            password: savedPassword,
+          });
+
+          if (signInError) {
+            setError("登入失敗，請重新登入");
+            setLoading(false);
+            return;
+          }
+        }
+
         // 使用後端返回的 user_id 檢查訂閱狀態
         const userId = data.user_id;
         
@@ -140,6 +168,7 @@ export default function LoginPage() {
         } else {
           router.push("/dashboard");
         }
+        setLoading(false);
       } else {
         setError(data.message || "驗證碼錯誤");
         setLoading(false);
@@ -157,7 +186,7 @@ export default function LoginPage() {
     setError(null);
 
     try {
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/auth/send-login-code`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/auth/send-login-code`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -170,10 +199,10 @@ export default function LoginPage() {
       if (data.success) {
         setCodeSent(true);
       } else {
-        setError("發送驗證碼失敗");
+        setError("重新發送驗證碼失敗");
       }
     } catch (err) {
-      setError("發送驗證碼失敗，請稍後再試");
+      setError("重新發送驗證碼失敗，請稍後再試");
     }
 
     setLoading(false);
