@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from "framer-motion";
 
 import Link from "next/link";
 
-import { Bot, Calendar, MessageSquare, Shield, Zap, ArrowRight, CheckCircle2, Star, Globe, Clock, LayoutDashboard } from "lucide-react";
+import { Bot, Calendar, MessageSquare, Shield, Zap, ArrowRight, CheckCircle2, Star, Globe, Clock, LayoutDashboard, X, Check } from "lucide-react";
 
 
 
@@ -18,7 +18,121 @@ const staticText1 = "讓 AI 幫您";
 
 const staticText2 = "搞定所有";
 
+// 行業數據
+type IndustryData = {
+  keyBenefit: string;
+  features: string[];
+  tags: string[];
+  chatMessages: { type: 'user' | 'ai'; text: string }[];
+};
 
+const industries: Record<string, IndustryData> = {
+  '餐飲服務': {
+    keyBenefit: '告別電話漏接，離峰自動促銷。',
+    features: ['AI 自動處理訂位諮詢', '主動推播今日特餐圖卡', '引導加入會員'],
+    tags: ['#不改現有流程', '#自動化行銷', '#高滿意度回覆'],
+    chatMessages: [
+      { type: 'user', text: '請問今晚還有位置嗎？' },
+      { type: 'ai', text: '您好！今晚 7 點還有兩個四人桌的空檔，需要我幫您預約嗎？' },
+      { type: 'user', text: '好的，幫我預約 7 點' },
+      { type: 'ai', text: '已為您預約今晚 7 點四人桌。今日特餐：香煎鮭魚定餐，要幫您預訂嗎？' }
+    ]
+  },
+  '美髮美容': {
+    keyBenefit: '作品即時展示，預約零衝突。',
+    features: ['動態展示設計師作品集', 'AI 根據排程自動建議空檔', '傳送染燙後護理叮嚀'],
+    tags: ['#作品展示', '#智能排程', '#客戶關懷'],
+    chatMessages: [
+      { type: 'user', text: '我想預約明天下午剪髮' },
+      { type: 'ai', text: '明天下午 3 點有空檔，推薦設計師 Kevin，他的短髮作品很受歡迎，要看嗎？' },
+      { type: 'ai', text: '[圖片：Kevin 設計師作品集]' },
+      { type: 'user', text: '好的，就預約 3 點' }
+    ]
+  },
+  '零售診所': {
+    keyBenefit: '過濾 80% 重複諮詢，專注核心服務。',
+    features: ['智慧處理常見 QA', '自動提醒預約看診', '過濾無效推銷訊息'],
+    tags: ['#智能客服', '#自動提醒', '#時間管理'],
+    chatMessages: [
+      { type: 'user', text: '門診時間是什麼時候？' },
+      { type: 'ai', text: '門診時間：週一至週五 9:00-18:00，週六 9:00-12:00' },
+      { type: 'user', text: '產品規格呢？' },
+      { type: 'ai', text: '產品規格已發送至您的手機，請查收。提醒您下週三有預約。' }
+    ]
+  }
+};
+
+// 數字跳動動畫組件
+function NumberTicker({ value, duration = 2 }: { value: number | string; duration?: number }) {
+  const [displayValue, setDisplayValue] = useState(0);
+  const [isVisible, setIsVisible] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          setIsVisible(true);
+        }
+      },
+      { threshold: 0.5 }
+    );
+
+    if (ref.current) {
+      observer.observe(ref.current);
+    }
+
+    return () => {
+      if (ref.current) {
+        observer.unobserve(ref.current);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isVisible) return;
+
+    if (typeof value === 'number') {
+      let start = 0;
+      const end = value;
+      const increment = end / (duration * 60);
+      const timer = setInterval(() => {
+        start += increment;
+        if (start >= end) {
+          setDisplayValue(end);
+          clearInterval(timer);
+        } else {
+          setDisplayValue(Math.floor(start));
+        }
+      }, 1000 / 60);
+      return () => clearInterval(timer);
+    }
+  }, [isVisible, value, duration]);
+
+  return (
+    <div ref={ref}>
+      {typeof value === 'number' ? displayValue : value}
+    </div>
+  );
+}
+
+// 打字機效果組件 - 使用 framer-motion stagger
+function TypewriterText({ text, speed = 0.05 }: { text: string; speed?: number }) {
+  return (
+    <span>
+      {text.split('').map((char, index) => (
+        <motion.span
+          key={index}
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: index * speed }}
+        >
+          {char}
+        </motion.span>
+      ))}
+    </span>
+  );
+}
 
 export default function LandingPage() {
 
@@ -29,6 +143,8 @@ export default function LandingPage() {
   const [isPlayingForward, setIsPlayingForward] = useState(true);
 
   const [isScrolled, setIsScrolled] = useState(false);
+
+  const [selectedIndustry, setSelectedIndustry] = useState('餐飲服務');
 
 
 
@@ -448,118 +564,115 @@ export default function LandingPage() {
 
 
 
-      {/* 痛點對比區 */}
-
+      {/* 痛點對話 */}
       <section className="py-32 px-6 bg-white">
-
         <div className="max-w-7xl mx-auto">
-
           <div className="text-center mb-20">
-
-            <h2 className="text-4xl md:text-6xl font-black mb-6">傳統困境 vs AI 數位店長</h2>
-
-            <p className="text-xl text-gray-500 font-medium">選擇更智能的營運方式</p>
-
+            <h2 className="text-4xl md:text-6xl font-black mb-6">別讓瑣事，消耗了您的熱情</h2>
+            <p className="text-xl text-gray-500 font-medium">傳統經營的混亂 vs. 數位店長的秩序</p>
           </div>
 
+          <div className="grid md:grid-cols-2 gap-8">
+            {/* 左側：傳統模式 */}
+            <motion.div
+              initial={{ opacity: 0, filter: 'blur(10px)' }}
+              whileInView={{ opacity: 1, filter: 'blur(0px)' }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.8 }}
+              className="bg-gray-50 p-8 rounded-2xl border border-gray-200"
+            >
+              <h3 className="text-2xl font-bold text-gray-600 mb-6">傳統經營：身心俱疲</h3>
+              <div className="space-y-6">
+                <div className="flex items-start gap-4">
+                  <div className="w-6 h-6 bg-gray-300 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                    <X className="w-4 h-4 text-gray-500" />
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-bold text-gray-700 mb-2">消失的訂單</h4>
+                    <p className="text-sm text-gray-600 leading-relaxed">
+                      手機靜音或忙碌中，錯過了一次又一次的詢問。
+                    </p>
+                  </div>
+                </div>
 
+                <div className="flex items-start gap-4">
+                  <div className="w-6 h-6 bg-gray-300 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                    <X className="w-4 h-4 text-gray-500" />
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-bold text-gray-700 mb-2">客戶的耐心</h4>
+                    <p className="text-sm text-gray-600 leading-relaxed">
+                      讓客人等待超過 10 分鐘，他們就成了對手的客戶。
+                    </p>
+                  </div>
+                </div>
 
-          <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+                <div className="flex items-start gap-4">
+                  <div className="w-6 h-6 bg-gray-300 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                    <X className="w-4 h-4 text-gray-500" />
+                  </div>
+                  <div>
+                    <h4 className="text-lg font-bold text-gray-700 mb-2">深夜的空白</h4>
+                    <p className="text-sm text-gray-600 leading-relaxed">
+                      凌晨三點的諮詢無人回應，商機隨之消失。
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
 
-            {/* 傳統困境 - 左欄，較低對比度 */}
-
-            <div className="p-10 bg-gray-50 border border-gray-200 rounded-[32px]">
-
-              <h4 className="text-2xl font-bold mb-8 text-gray-400">傳統困境</h4>
-
-              <ul className="space-y-6">
-
-                {["漏接訊息", "客戶等待過久", "預約衝突", "半夜無人回覆"].map((item, i) => (
-
-                  <li key={i} className="flex items-center gap-3 font-medium text-gray-400 text-lg">
-
-                    <div className="w-8 h-8 rounded-full bg-gray-300 flex items-center justify-center">
-
-                      <span className="text-gray-400 text-sm">✗</span>
-
+            {/* 右側：數位店長 */}
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: 0.3 }}
+              className="bg-black p-8 rounded-2xl border-2 border-red-600 relative overflow-hidden hover:-translate-y-2 hover:shadow-[0_10px_30px_-10px_rgba(255,0,0,0.3)] transition-all duration-300"
+            >
+              <div className="absolute inset-0 bg-gradient-to-br from-red-600/10 to-transparent pointer-events-none"></div>
+              <div className="relative z-10">
+                <h3 className="text-2xl font-bold text-white mb-6">數位店長：優雅掌控</h3>
+                <div className="space-y-6">
+                  <div className="flex items-start gap-4">
+                    <div className="w-6 h-6 bg-red-600 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                      <Check className="w-4 h-4 text-white" />
                     </div>
-
-                    {item}
-
-                  </li>
-
-                ))}
-
-              </ul>
-
-            </div>
-
-
-
-            {/* AI 數位店長 - 右欄，高對比白字，紅色點綴 */}
-
-            <div className="p-10 bg-black text-white rounded-[32px] shadow-2xl shadow-black/20">
-
-              <h4 className="text-2xl font-bold mb-8 text-white">AI 數位店長</h4>
-
-              <ul className="space-y-6">
-
-                <li className="flex items-center gap-3 font-bold text-white text-lg">
-
-                  <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center">
-
-                    <span className="text-white text-sm">✓</span>
-
+                    <div>
+                      <h4 className="text-lg font-bold text-white mb-2">秒級回覆</h4>
+                      <p className="text-sm text-gray-400 leading-relaxed">
+                        0 秒自動響應，讓客人第一時間感受到您的在乎。
+                      </p>
+                    </div>
                   </div>
 
-                  <span className="text-white"><span className="text-red-500">0 秒</span>回應</span>
-
-                </li>
-
-                <li className="flex items-center gap-3 font-bold text-white text-lg">
-
-                  <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center">
-
-                    <span className="text-white text-sm">✓</span>
-
+                  <div className="flex items-start gap-4">
+                    <div className="w-6 h-6 bg-red-600 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                      <Check className="w-4 h-4 text-white" />
+                    </div>
+                    <div>
+                      <h4 className="text-lg font-bold text-white mb-2">智慧識讀</h4>
+                      <p className="text-sm text-gray-400 leading-relaxed">
+                        Gemini AI 讀懂口語需求，像真人一樣精準推薦服務。
+                      </p>
+                    </div>
                   </div>
 
-                  <span className="text-white"><span className="text-red-500">精準</span>識別需求</span>
-
-                </li>
-
-                <li className="flex items-center gap-3 font-bold text-white text-lg">
-
-                  <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center">
-
-                    <span className="text-white text-sm">✓</span>
-
+                  <div className="flex items-start gap-4">
+                    <div className="w-6 h-6 bg-red-600 rounded-full flex items-center justify-center flex-shrink-0 mt-1">
+                      <Check className="w-4 h-4 text-white" />
+                    </div>
+                    <div>
+                      <h4 className="text-lg font-bold text-white mb-2">自動獲客</h4>
+                      <p className="text-sm text-gray-400 leading-relaxed">
+                        即使您在睡覺，AI 也在幫您完成預約與排程。
+                      </p>
+                    </div>
                   </div>
-
-                  <span className="text-white"><span className="text-red-500">自動</span>串接資料庫</span>
-
-                </li>
-
-                <li className="flex items-center gap-3 font-bold text-white text-lg">
-
-                  <div className="w-8 h-8 rounded-full bg-green-500 flex items-center justify-center">
-
-                    <span className="text-white text-sm">✓</span>
-
-                  </div>
-
-                  <span className="text-white"><span className="text-red-500">掌握</span>客流動態</span>
-
-                </li>
-
-              </ul>
-
-            </div>
-
+                </div>
+              </div>
+            </motion.div>
           </div>
-
         </div>
-
       </section>
 
 
@@ -940,6 +1053,191 @@ export default function LandingPage() {
 
         </div>
 
+      </section>
+
+
+
+      {/* 行業應用情境 */}
+      <section id="industry-scenarios" className="py-32 px-6 bg-white">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-20">
+            <h2 className="text-4xl md:text-6xl font-black mb-6">適用於各種行業</h2>
+            <p className="text-xl text-gray-500 font-medium">看看 AI 如何改變您的營運模式</p>
+          </div>
+
+          <div className="grid md:grid-cols-2 gap-16 items-start">
+            {/* 左側：行業切換按鈕 */}
+            <div className="space-y-4">
+              {Object.keys(industries).map((industry) => (
+                <button
+                  key={industry}
+                  onClick={() => setSelectedIndustry(industry)}
+                  className={`w-full text-left p-6 rounded-2xl transition-all duration-300 relative ${
+                    selectedIndustry === industry
+                      ? 'bg-black text-white'
+                      : 'bg-gray-50 text-gray-500 hover:bg-gray-100 hover:border-red-600 hover:-translate-y-2 hover:shadow-[0_10px_30px_-10px_rgba(255,0,0,0.3)] border border-transparent'
+                  }`}
+                >
+                  {selectedIndustry === industry && (
+                    <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-16 bg-red-600 rounded-r-full"></div>
+                  )}
+                  <h3 className={`text-2xl font-bold ${selectedIndustry === industry ? 'text-white' : 'text-gray-600'}`}>
+                    {industry}
+                  </h3>
+                  <p className={`mt-2 ${selectedIndustry === industry ? 'text-gray-300' : 'text-gray-400'}`}>
+                    {industries[industry].keyBenefit}
+                  </p>
+                </button>
+              ))}
+            </div>
+
+            {/* 右側：手機 Mockup */}
+            <div className="relative">
+              <div className="bg-black rounded-[3rem] p-3 shadow-2xl shadow-black/30">
+                <div className="bg-white rounded-[2.5rem] overflow-hidden">
+                  {/* 手機頂部 */}
+                  <div className="bg-gray-100 px-6 py-4 flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                      <span className="text-xs font-bold text-gray-600">LINE</span>
+                    </div>
+                    <div className="w-20 h-1 bg-gray-300 rounded-full"></div>
+                  </div>
+
+                  {/* 聊天區域 */}
+                  <div className="h-96 overflow-y-auto p-4 space-y-4 bg-gray-50">
+                    {/* 功能點列表 */}
+                    <div className="pb-4 border-b border-gray-200 flex gap-2 flex-wrap">
+                      {industries[selectedIndustry].features.map((feature, idx) => (
+                        <motion.div
+                          key={idx}
+                          initial={{ opacity: 0, x: -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          transition={{ delay: 0.5 + idx * 0.1 }}
+                          className="flex items-center gap-2"
+                        >
+                          <div className="w-5 h-5 bg-red-600 rounded-full flex items-center justify-center flex-shrink-0">
+                            <CheckCircle2 className="w-3 h-3 text-white" />
+                          </div>
+                          <span className="text-xs text-gray-600 font-medium"><TypewriterText key={`${selectedIndustry}-${idx}`} text={feature} speed={0.05} /></span>
+                        </motion.div>
+                      ))}
+                    </div>
+
+                    <AnimatePresence mode="wait">
+                      {industries[selectedIndustry].chatMessages.map((msg, idx) => (
+                        <motion.div
+                          key={idx}
+                          initial={{ opacity: 0, x: msg.type === 'user' ? 20 : -20 }}
+                          animate={{ opacity: 1, x: 0 }}
+                          exit={{ opacity: 0, x: msg.type === 'user' ? -20 : 20 }}
+                          transition={{ duration: 0.3, delay: idx * 0.1 }}
+                          className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}
+                        >
+                          <div className={`max-w-[80%] p-3 rounded-2xl ${
+                            msg.type === 'user'
+                              ? 'bg-black text-white rounded-br-sm'
+                              : 'bg-white text-gray-800 border border-gray-200 rounded-bl-sm'
+                          }`}>
+                            <p className="text-sm leading-relaxed"><TypewriterText key={`${selectedIndustry}-${idx}`} text={msg.text} speed={0.05} /></p>
+                          </div>
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
+                  </div>
+
+                  {/* 輸入區域 */}
+                  <div className="bg-gray-100 px-4 py-3 flex items-center gap-2">
+                    <div className="flex-1 h-10 bg-white rounded-full border border-gray-200"></div>
+                    <div className="w-10 h-10 bg-black rounded-full flex items-center justify-center">
+                      <ArrowRight className="w-5 h-5 text-white" />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+
+
+      {/* 數據背書 */}
+      <section className="py-24 px-6 bg-[#050505]">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl md:text-5xl font-black mb-6 text-white leading-relaxed">懂生意，更懂你的不容易</h2>
+            <p className="text-lg md:text-xl text-gray-400 leading-relaxed max-w-3xl mx-auto">
+              我們不玩技術名詞。Digital Manager 的目標很簡單：幫你分擔瑣事，讓你把時間留給更重要的客人。
+            </p>
+          </div>
+
+          <div className="grid md:grid-cols-3 gap-0">
+            {/* 數據一 */}
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6 }}
+              className="px-8 py-12 md:border-r border-dashed border-white/10 md:border-b-0 border-b hover:bg-white/5 hover:shadow-[0_0_30px_rgba(255,0,0,0.15)] transition-all duration-300 group"
+            >
+              <div className="text-6xl font-black mb-4">
+                <span className="text-red-600">
+                  <NumberTicker value={365} duration={2.5} />
+                </span>
+                <span className="text-white"> 天</span>
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">您的全年無休店長</h3>
+              <p className="text-sm text-gray-400 leading-relaxed">
+                不論深夜或連假，AI 始終在線，隨時為您的客戶提供溫暖回應。
+              </p>
+            </motion.div>
+
+            {/* 數據二 */}
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: 0.2 }}
+              className="px-8 py-12 md:border-r border-dashed border-white/10 md:border-b-0 border-b hover:bg-white/5 hover:shadow-[0_0_30px_rgba(255,0,0,0.15)] transition-all duration-300 group"
+            >
+              <div className="text-6xl font-black mb-4">
+                <span className="text-red-600">高</span>
+                <span className="text-white">情商</span>
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">懂溝通的智慧大腦</h3>
+              <p className="text-sm text-gray-400 leading-relaxed">
+                搭載 Google 領先技術，能像真人一樣理解客人的需求，讓對話不再冷冰冰。
+              </p>
+            </motion.div>
+
+            {/* 數據三 */}
+            <motion.div
+              initial={{ opacity: 0, y: 30 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: 0.4 }}
+              className="px-8 py-12 hover:bg-white/5 hover:shadow-[0_0_30px_rgba(255,0,0,0.15)] transition-all duration-300 group"
+            >
+              <div className="text-6xl font-black mb-4">
+                <span className="text-red-600">
+                  <NumberTicker value={0} duration={2.5} />
+                </span>
+                <span className="text-white"> 遺漏</span>
+              </div>
+              <h3 className="text-xl font-bold text-white mb-2">在乎每一位進店的客人</h3>
+              <p className="text-sm text-gray-400 leading-relaxed">
+                我們確保每一則諮詢都得到即時處理，把路過的詢問通通變成真正的成交。
+              </p>
+            </motion.div>
+          </div>
+
+          <div className="mt-12 text-center">
+            <p className="text-xs text-gray-500">
+              與您一樣，我們也在創業路上，更理解您對效率的追求。
+            </p>
+          </div>
+        </div>
       </section>
 
 
