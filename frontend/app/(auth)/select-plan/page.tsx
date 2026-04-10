@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
-import { Check, Loader2 } from "lucide-react";
+import { Check, Loader2, X } from "lucide-react";
 
 export default function SelectPlanPage() {
   const [loading, setLoading] = useState(false);
@@ -54,7 +54,13 @@ export default function SelectPlanPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f3f4f6] flex items-center justify-center p-4">
+    <div className="min-h-screen bg-[#f3f4f6] flex items-center justify-center p-4 relative">
+      <button
+        onClick={() => router.push("/dashboard")}
+        className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 transition-colors z-10"
+      >
+        <X className="w-6 h-6" />
+      </button>
       <div className="max-w-4xl w-full">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-gray-900 mb-2">選擇您的方案</h1>
