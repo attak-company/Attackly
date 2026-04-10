@@ -31,8 +31,8 @@ export function Sidebar() {
   const isSettingsActive = pathname === "/dashboard/settings" || pathname === "/dashboard/settings/line";
 
   return (
-    <aside className="w-[280px] bg-[#f8f9fa] border-r border-[#e9ecef] h-[calc(100vh-64px)] fixed top-16 left-0 z-[999] flex flex-col rounded-tl-[20px] overflow-hidden">
-      <nav className="flex-1 px-3 py-6 space-y-1">
+    <div className="flex flex-col h-full overflow-hidden">
+      <nav className="flex-1 px-3 py-6 space-y-1 overflow-y-auto">
         {menuItems.map((item) => {
           const isActive = pathname === item.href;
           return (
@@ -122,6 +122,6 @@ export function Sidebar() {
           </div>
         </div>
       </div>
-    </aside>
+    </div>
   );
 }

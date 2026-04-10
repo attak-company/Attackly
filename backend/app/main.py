@@ -1,8 +1,10 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 import uvicorn
 from app.api import router as api_router
 from app.websocket.manager import ConnectionManager
+import os
 
 app = FastAPI(title="數位店長 API", version="0.1.0")
 
@@ -14,6 +16,11 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Serve static files from frontend/public directory
+static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "..", "frontend", "public")
+if os.path.exists(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 # API Routes
 app.include_router(api_router, prefix="/api/v1")
