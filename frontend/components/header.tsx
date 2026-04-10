@@ -31,7 +31,7 @@ export function Header() {
   };
 
   return (
-    <header className="h-16 bg-black text-white flex items-center justify-between px-6 fixed top-0 left-0 right-0 z-[3000] shadow-[0_1px_0_rgba(255,255,255,0.08)_inset] rounded-l-2xl rounded-r-2xl mx-4">
+    <header className="h-16 bg-black text-white flex items-center justify-between px-6 fixed top-0 left-0 right-0 z-[3000] shadow-[0_1px_0_rgba(255,255,255,0.08)_inset]">
       <div className="flex items-center">
         <div className="flex items-center gap-2">
           {/* Logo Placeholder */}

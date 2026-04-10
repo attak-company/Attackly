@@ -499,7 +499,7 @@ export default function RegisterPage() {
             <img 
               src="/Logo.png" 
               alt="Logo" 
-              className="w-20 h-20 object-contain"
+              className="w-24 h-24 object-contain"
             />
           </div>
           <h2 className="text-2xl font-bold text-center text-gray-900 mb-2">開始您的數位經營</h2>
