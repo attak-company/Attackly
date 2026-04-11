@@ -48,3 +48,13 @@ main {
   scrollbar-width: thin;
   scrollbar-color: #9ca3af transparent;
 }
+
+/* Hide scrollbar for specific elements */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
