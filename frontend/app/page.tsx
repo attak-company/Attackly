@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from "framer-motion";
 
 import Link from "next/link";
 
-import { Bot, Calendar, MessageSquare, Shield, ShieldCheck, Zap, ArrowRight, CheckCircle2, Star, Globe, Clock, LayoutDashboard, X, Check, Key, Settings } from "lucide-react";
+import { Bot, Calendar, MessageSquare, Shield, ShieldCheck, Zap, ArrowRight, CheckCircle2, Star, Globe, Clock, LayoutDashboard, X, Check, Key, Settings, Mail } from "lucide-react";
 
 
 
@@ -148,12 +148,62 @@ export default function LandingPage() {
 
   const [activeStep, setActiveStep] = useState(0);
 
+  const [activeSection, setActiveSection] = useState('');
+
   useEffect(() => {
     const interval = setInterval(() => {
       setActiveStep((prev) => (prev + 1) % 3);
     }, 3000);
     return () => clearInterval(interval);
   }, []);
+
+  // 滾動監聽器 - 追蹤當前可見的區塊
+  useEffect(() => {
+    const sections = ['features', 'solutions', 'setup', 'pricing'];
+
+    const handleScroll = () => {
+      const scrollPosition = window.scrollY + 100; // 偏移 100px
+      let foundSection = false;
+
+      for (const section of sections) {
+        const element = document.getElementById(section);
+        if (element) {
+          const { offsetTop, offsetHeight } = element;
+          if (scrollPosition >= offsetTop && scrollPosition < offsetTop + offsetHeight) {
+            setActiveSection(section);
+            foundSection = true;
+            break;
+          }
+        }
+      }
+
+      // 如果不在任何追蹤區塊內，重置 activeSection
+      if (!foundSection) {
+        setActiveSection('');
+      }
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    handleScroll(); // 初始化檢查
+
+    return () => window.removeEventListener('scroll', handleScroll);
+  }, []);
+
+  // 平滑滾動功能
+  const handleSmoothScroll = (e: React.MouseEvent<HTMLAnchorElement>, targetId: string) => {
+    e.preventDefault();
+    const element = document.getElementById(targetId);
+    if (element) {
+      const offset = 80; // Header 高度偏移
+      const elementPosition = element.getBoundingClientRect().top + window.pageYOffset;
+      const offsetPosition = elementPosition - offset;
+      
+      window.scrollTo({
+        top: offsetPosition,
+        behavior: 'smooth'
+      });
+    }
+  };
 
 
 
@@ -253,7 +303,7 @@ export default function LandingPage() {
 
     const handleScroll = () => {
 
-      setIsScrolled(window.scrollY > 0);
+      setIsScrolled(window.scrollY > 50);
 
     };
 
@@ -295,25 +345,32 @@ export default function LandingPage() {
 
   return (
 
-    <div className="min-h-screen bg-white text-gray-900 selection:bg-black selection:text-white">
+    <div className="min-h-screen bg-[#FAFAFA] text-gray-900 selection:bg-[#0A0A0A] selection:text-white">
 
       {/* 導覽列 */}
 
-      <nav className={`fixed top-0 left-0 right-0 z-[5000] transition-all duration-500 ease-in-out ${isScrolled ? 'bg-white/70 backdrop-blur-lg' : 'bg-transparent'}`}>
+      <nav className={`fixed top-0 left-0 right-0 z-[5000] transition-all duration-500 ease-in-out ${isScrolled ? 'bg-[#FAFAFA]/70 backdrop-blur-md shadow-lg' : 'bg-transparent'}`}>
 
-        <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+        <div className={`max-w-7xl mx-auto px-6 flex items-center justify-between transition-all duration-500 ${isScrolled ? 'h-16' : 'h-20'}`}>
 
           <div className="flex items-center gap-3">
 
-            <img 
+            <button
+              onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+              className="hover:animate-[float_2s_linear_infinite] hover:drop-shadow-[4px_4px_10px_rgba(50,50,50,0.5)] rounded-none bg-transparent overflow-hidden"
+            >
 
-              src="/Logo.png" 
+              <img
 
-              alt="Logo" 
+                src="/Logo.png"
 
-              className="w-14 h-14 object-contain"
+                alt="Logo"
 
-            />
+                className="w-14 h-14 object-contain rounded-none bg-transparent"
+
+              />
+
+            </button>
 
             <div className="flex flex-col">
 
@@ -327,11 +384,27 @@ export default function LandingPage() {
 
           <div className="flex items-center gap-8">
 
-            <div className="hidden md:flex items-center gap-6 text-sm font-medium text-gray-500">
+            <div className="hidden md:flex items-center gap-6 text-sm font-medium text-gray-600">
 
-              <a href="#features" className="hover:text-black transition-colors">核心功能</a>
+              <a href="#features" onClick={(e) => handleSmoothScroll(e, 'features')} className={`hover:text-red-600 transition-colors relative ${activeSection === 'features' ? 'text-red-600' : ''}`}>
+                核心功能
+                {activeSection === 'features' && <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-1 h-1 bg-red-600 rounded-full"></span>}
+              </a>
 
-              <a href="#pricing" className="hover:text-black transition-colors">價格方案</a>
+              <a href="#solutions" onClick={(e) => handleSmoothScroll(e, 'solutions')} className={`hover:text-red-600 transition-colors relative ${activeSection === 'solutions' ? 'text-red-600' : ''}`}>
+                應用場景
+                {activeSection === 'solutions' && <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-1 h-1 bg-red-600 rounded-full"></span>}
+              </a>
+
+              <a href="#setup" onClick={(e) => handleSmoothScroll(e, 'setup')} className={`hover:text-red-600 transition-colors relative ${activeSection === 'setup' ? 'text-red-600' : ''}`}>
+                設定流程
+                {activeSection === 'setup' && <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-1 h-1 bg-red-600 rounded-full"></span>}
+              </a>
+
+              <a href="#pricing" onClick={(e) => handleSmoothScroll(e, 'pricing')} className={`hover:text-red-600 transition-colors relative ${activeSection === 'pricing' ? 'text-red-600' : ''}`}>
+                價格方案
+                {activeSection === 'pricing' && <span className="absolute -bottom-2 left-1/2 -translate-x-1/2 w-1 h-1 bg-red-600 rounded-full"></span>}
+              </a>
 
             </div>
 
@@ -347,11 +420,13 @@ export default function LandingPage() {
 
                 href="/register"
 
-                className="bg-black text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:border-red-600 hover:-translate-y-1 hover:shadow-[0_10px_30px_-10px_rgba(255,0,0,0.3)] active:scale-95 transition-all border-2 border-transparent"
+                className="bg-[#0A0A0A] text-white px-6 py-2.5 rounded-xl text-sm font-bold hover:border-red-600 hover:-translate-y-1 hover:shadow-[0_10px_30px_-10px_rgba(255,0,0,0.3)] active:scale-95 transition-all border-2 border-red-600/50 relative overflow-hidden"
 
               >
 
-                免費試用
+                <div className="absolute inset-0 bg-red-600/5 animate-pulse"></div>
+
+                <span className="relative z-10">免費試用</span>
 
               </Link>
 
@@ -371,7 +446,7 @@ export default function LandingPage() {
 
         {/* 背景影片層 - 雙影片切換技術 (Double Buffering) */}
 
-        <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none bg-black">
+        <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none bg-[#0A0A0A]">
 
           {/* 正向影片 */}
 
@@ -417,7 +492,7 @@ export default function LandingPage() {
 
           {/* 磨砂遮罩 Overlay */}
 
-          <div className="absolute inset-0 bg-white/60 backdrop-blur-[3px] z-10"></div>
+          <div className="absolute inset-0 bg-[#FAFAFA]/60 backdrop-blur-[3px] z-10"></div>
 
         </div>
 
@@ -427,7 +502,7 @@ export default function LandingPage() {
 
         <div className="max-w-7xl mx-auto text-center relative z-20">
 
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gray-100 border border-gray-200 text-gray-600 text-xs font-bold mb-10 uppercase tracking-widest">
+          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-[#FAFAFA] border border-gray-200 text-gray-600 text-xs font-bold mb-10 uppercase tracking-widest">
 
             <span className="relative flex h-2 w-2">
 
@@ -543,7 +618,7 @@ export default function LandingPage() {
 
               href="/register"
 
-              className="w-full sm:w-auto bg-black text-white px-10 py-5 rounded-2xl text-xl font-bold hover:border-red-600 hover:-translate-y-1 hover:shadow-[0_10px_30px_-10px_rgba(255,0,0,0.3)] active:scale-95 transition-all flex items-center justify-center group border-2 border-transparent"
+              className="w-full sm:w-auto bg-[#0A0A0A] text-white px-10 py-5 rounded-2xl text-xl font-bold hover:border-red-600 hover:-translate-y-1 hover:shadow-[0_10px_30px_-10px_rgba(255,0,0,0.3)] active:scale-95 transition-all flex items-center justify-center group border-2 border-transparent"
 
             >
 
@@ -574,7 +649,7 @@ export default function LandingPage() {
 
 
       {/* 痛點對話 */}
-      <section className="py-32 px-6 bg-white">
+      <section className="py-32 px-6 bg-[#FAFAFA]">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-20">
             <h2 className="text-4xl md:text-6xl font-black mb-6">別讓瑣事，消耗了您的熱情</h2>
@@ -636,7 +711,7 @@ export default function LandingPage() {
               whileInView={{ opacity: 1, scale: 1 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: 0.3 }}
-              className="bg-black p-8 rounded-2xl border-2 border-red-600 relative overflow-hidden hover:-translate-y-2 hover:shadow-[0_10px_30px_-10px_rgba(255,0,0,0.3)] transition-all duration-300"
+              className="bg-[#0A0A0A] p-8 rounded-2xl border-2 border-red-600 relative overflow-hidden hover:-translate-y-2 hover:shadow-[0_10px_30px_-10px_rgba(255,0,0,0.3)] transition-all duration-300"
             >
               <div className="absolute inset-0 bg-gradient-to-br from-red-600/10 to-transparent pointer-events-none"></div>
               <div className="relative z-10">
@@ -688,7 +763,7 @@ export default function LandingPage() {
 
       {/* 功能介紹 */}
 
-      <section id="features" className="py-32 bg-black">
+      <section id="features" className="py-32 bg-[#0A0A0A]">
 
         <div className="max-w-7xl mx-auto px-6">
 
@@ -718,7 +793,7 @@ export default function LandingPage() {
 
             >
 
-              <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mb-6">
+              <div className="w-16 h-16 bg-[#FAFAFA]/10 rounded-2xl flex items-center justify-center mb-6">
 
                 <MessageSquare className="w-8 h-8 text-white" />
 
@@ -734,11 +809,11 @@ export default function LandingPage() {
 
               <div className="flex gap-2">
 
-                <span className="px-2 py-1 bg-white/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#自動報價</span>
+                <span className="px-2 py-1 bg-[#FAFAFA]/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#自動報價</span>
 
-                <span className="px-2 py-1 bg-white/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#預約諮詢</span>
+                <span className="px-2 py-1 bg-[#FAFAFA]/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#預約諮詢</span>
 
-                <span className="px-2 py-1 bg-white/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#人工介入機制</span>
+                <span className="px-2 py-1 bg-[#FAFAFA]/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#人工介入機制</span>
 
               </div>
 
@@ -762,7 +837,7 @@ export default function LandingPage() {
 
             >
 
-              <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mb-6">
+              <div className="w-16 h-16 bg-[#FAFAFA]/10 rounded-2xl flex items-center justify-center mb-6">
 
                 <LayoutDashboard className="w-8 h-8 text-white" />
 
@@ -778,11 +853,11 @@ export default function LandingPage() {
 
               <div className="flex gap-2">
 
-                <span className="px-2 py-1 bg-white/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#今日預約熱圖</span>
+                <span className="px-2 py-1 bg-[#FAFAFA]/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#今日預約熱圖</span>
 
-                <span className="px-2 py-1 bg-white/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#自動客戶標籤</span>
+                <span className="px-2 py-1 bg-[#FAFAFA]/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#自動客戶標籤</span>
 
-                <span className="px-2 py-1 bg-white/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#翻桌率分析</span>
+                <span className="px-2 py-1 bg-[#FAFAFA]/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#翻桌率分析</span>
 
               </div>
 
@@ -806,7 +881,7 @@ export default function LandingPage() {
 
             >
 
-              <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mb-6">
+              <div className="w-16 h-16 bg-[#FAFAFA]/10 rounded-2xl flex items-center justify-center mb-6">
 
                 <Zap className="w-8 h-8 text-white" />
 
@@ -822,11 +897,11 @@ export default function LandingPage() {
 
               <div className="flex gap-2">
 
-                <span className="px-2 py-1 bg-white/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#無須寫程式</span>
+                <span className="px-2 py-1 bg-[#FAFAFA]/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#無須寫程式</span>
 
-                <span className="px-2 py-1 bg-white/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#串接 LINE 官方帳號</span>
+                <span className="px-2 py-1 bg-[#FAFAFA]/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#串接 LINE 官方帳號</span>
 
-                <span className="px-2 py-1 bg-white/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#3分鐘上線</span>
+                <span className="px-2 py-1 bg-[#FAFAFA]/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#3分鐘上線</span>
 
               </div>
 
@@ -842,17 +917,40 @@ export default function LandingPage() {
 
       {/* 分隔線 */}
 
-      <div className="max-w-7xl mx-auto px-6">
-
-        <div className="border-b-4 border-gray-500/50"></div>
-
+      <div className="w-full h-1 relative overflow-hidden bg-red-600">
+        <div 
+          className="absolute top-1/2 -translate-y-1/2 left-0 w-24 h-24 animate-[laser-point_3s_ease-in-out_infinite_alternate]"
+          style={{
+            mixBlendMode: 'screen'
+          }}
+        >
+          <svg
+            viewBox="0 0 100 100"
+            className="w-full h-full animate-[spin-slow_8s_linear_infinite]"
+            style={{
+              filter: 'drop-shadow(0 0 15px #FF0000) drop-shadow(0 0 35px #FF0000) drop-shadow(0 0 60px #FF0000)'
+            }}
+          >
+            <defs>
+              <radialGradient id="spark-gradient" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor="#FFFFFF" />
+                <stop offset="20%" stopColor="#FF0000" />
+                <stop offset="100%" stopColor="#FF0000" stopOpacity="0" />
+              </radialGradient>
+            </defs>
+            <path
+              d="M50 0 L55 40 L95 50 L55 60 L50 100 L45 60 L5 50 L45 40 Z"
+              fill="url(#spark-gradient)"
+            />
+          </svg>
+        </div>
       </div>
 
 
 
       {/* LINE AI 核心生態 */}
 
-      <section id="line-integration" className="py-32 px-6 bg-[#050505] relative overflow-hidden">
+      <section id="line-integration" className="py-32 px-6 bg-[#0A0A0A] relative overflow-hidden">
 
         {/* 背景浮水印 */}
 
@@ -898,7 +996,7 @@ export default function LandingPage() {
 
           <div className="flex items-center justify-center gap-8 mb-16">
 
-            <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center border-2 border-red-600 shadow-[0_0_30px_rgba(255,0,0,0.3)]">
+            <div className="w-16 h-16 rounded-2xl bg-[#FAFAFA]/5 flex items-center justify-center border-2 border-red-600 shadow-[0_0_30px_rgba(255,0,0,0.3)]">
 
               <span className="text-white font-bold text-2xl">LINE</span>
 
@@ -914,7 +1012,7 @@ export default function LandingPage() {
 
             </div>
 
-            <div className="w-16 h-16 rounded-2xl bg-white/5 flex items-center justify-center border-2 border-red-600 shadow-[0_0_30px_rgba(255,0,0,0.3)]">
+            <div className="w-16 h-16 rounded-2xl bg-[#FAFAFA]/5 flex items-center justify-center border-2 border-red-600 shadow-[0_0_30px_rgba(255,0,0,0.3)]">
 
               <img src="/Gemini_logo.png.png" alt="Gemini" className="w-10 h-10 object-contain filter brightness-0 invert" />
 
@@ -944,7 +1042,7 @@ export default function LandingPage() {
 
             >
 
-              <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mb-6">
+              <div className="w-16 h-16 bg-[#FAFAFA]/10 rounded-2xl flex items-center justify-center mb-6">
 
                 <MessageSquare className="w-8 h-8 text-white" />
 
@@ -960,11 +1058,11 @@ export default function LandingPage() {
 
               <div className="flex gap-2">
 
-                <span className="px-2 py-1 bg-white/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#Gemini1.5支持</span>
+                <span className="px-2 py-1 bg-[#FAFAFA]/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#Gemini1.5支持</span>
 
-                <span className="px-2 py-1 bg-white/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#自然語言理解</span>
+                <span className="px-2 py-1 bg-[#FAFAFA]/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#自然語言理解</span>
 
-                <span className="px-2 py-1 bg-white/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#語意分析</span>
+                <span className="px-2 py-1 bg-[#FAFAFA]/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#語意分析</span>
 
               </div>
 
@@ -988,7 +1086,7 @@ export default function LandingPage() {
 
             >
 
-              <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mb-6">
+              <div className="w-16 h-16 bg-[#FAFAFA]/10 rounded-2xl flex items-center justify-center mb-6">
 
                 <Clock className="w-8 h-8 text-white" />
 
@@ -1004,11 +1102,11 @@ export default function LandingPage() {
 
               <div className="flex gap-2">
 
-                <span className="px-2 py-1 bg-white/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#100%訊息抵達</span>
+                <span className="px-2 py-1 bg-[#FAFAFA]/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#100%訊息抵達</span>
 
-                <span className="px-2 py-1 bg-white/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#智能時機判斷</span>
+                <span className="px-2 py-1 bg-[#FAFAFA]/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#智能時機判斷</span>
 
-                <span className="px-2 py-1 bg-white/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#自動化營銷</span>
+                <span className="px-2 py-1 bg-[#FAFAFA]/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#自動化營銷</span>
 
               </div>
 
@@ -1032,7 +1130,7 @@ export default function LandingPage() {
 
             >
 
-              <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mb-6">
+              <div className="w-16 h-16 bg-[#FAFAFA]/10 rounded-2xl flex items-center justify-center mb-6">
 
                 <LayoutDashboard className="w-8 h-8 text-white" />
 
@@ -1048,11 +1146,11 @@ export default function LandingPage() {
 
               <div className="flex gap-2">
 
-                <span className="px-2 py-1 bg-white/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#無須下載App</span>
+                <span className="px-2 py-1 bg-[#FAFAFA]/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#無須下載App</span>
 
-                <span className="px-2 py-1 bg-white/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#自動客戶標籤</span>
+                <span className="px-2 py-1 bg-[#FAFAFA]/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#自動客戶標籤</span>
 
-                <span className="px-2 py-1 bg-white/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#精準客群畫像</span>
+                <span className="px-2 py-1 bg-[#FAFAFA]/5 text-gray-500 text-xs rounded-full border border-white/10 group-hover:text-red-400 transition-colors">#精準客群畫像</span>
 
               </div>
 
@@ -1067,7 +1165,7 @@ export default function LandingPage() {
 
 
       {/* 行業應用情境 */}
-      <section id="industry-scenarios" className="py-32 px-6 bg-white">
+      <section id="solutions" className="py-32 px-6 bg-[#FAFAFA]">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-20">
             <h2 className="text-4xl md:text-6xl font-black mb-6">適用於各種行業</h2>
@@ -1083,7 +1181,7 @@ export default function LandingPage() {
                   onClick={() => setSelectedIndustry(industry)}
                   className={`w-full text-left p-6 rounded-2xl transition-all duration-300 relative ${
                     selectedIndustry === industry
-                      ? 'bg-black text-white'
+                      ? 'bg-[#0A0A0A] text-white'
                       : 'bg-gray-50 text-gray-500 hover:bg-gray-100 hover:border-red-600 hover:-translate-y-2 hover:shadow-[0_10px_30px_-10px_rgba(255,0,0,0.3)] border border-transparent'
                   }`}
                 >
@@ -1102,8 +1200,8 @@ export default function LandingPage() {
 
             {/* 右側：手機 Mockup */}
             <div className="relative">
-              <div className="bg-black rounded-[3rem] p-3 shadow-2xl shadow-black/30">
-                <div className="bg-white rounded-[2.5rem] overflow-hidden">
+              <div className="bg-[#0A0A0A] rounded-[3rem] p-3 shadow-2xl shadow-black/30">
+                <div className="bg-[#FAFAFA] rounded-[2.5rem] overflow-hidden">
                   {/* 手機頂部 */}
                   <div className="bg-gray-100 px-6 py-4 flex items-center justify-between">
                     <div className="flex items-center gap-2">
@@ -1158,8 +1256,8 @@ export default function LandingPage() {
                           >
                             <div className={`max-w-[80%] p-3 rounded-2xl ${
                               msg.type === 'user'
-                                ? 'bg-black text-white rounded-br-sm'
-                                : 'bg-white text-gray-800 border border-gray-200 rounded-bl-sm'
+                                ? 'bg-[#0A0A0A] text-white rounded-br-sm'
+                                : 'bg-[#FAFAFA] text-gray-800 border border-gray-200 rounded-bl-sm'
                             }`}>
                               <p className="text-sm leading-relaxed"><TypewriterText key={`${selectedIndustry}-${idx}`} text={msg.text} speed={0.05} /></p>
                             </div>
@@ -1171,8 +1269,8 @@ export default function LandingPage() {
 
                   {/* 輸入區域 */}
                   <div className="bg-gray-100 px-4 py-3 flex items-center gap-2">
-                    <div className="flex-1 h-10 bg-white rounded-full border border-gray-200"></div>
-                    <div className="w-10 h-10 bg-black rounded-full flex items-center justify-center">
+                    <div className="flex-1 h-10 bg-[#FAFAFA] rounded-full border border-gray-200"></div>
+                    <div className="w-10 h-10 bg-[#0A0A0A] rounded-full flex items-center justify-center">
                       <ArrowRight className="w-5 h-5 text-white" />
                     </div>
                   </div>
@@ -1186,7 +1284,7 @@ export default function LandingPage() {
 
 
       {/* 數據背書 */}
-      <section className="py-24 px-6 bg-[#050505]">
+      <section className="py-24 px-6 bg-[#0A0A0A]">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-4xl md:text-5xl font-black mb-6 text-white leading-relaxed">懂生意，更懂你的不容易</h2>
@@ -1202,7 +1300,7 @@ export default function LandingPage() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6 }}
-              className="px-8 py-12 md:border-r border-dashed border-white/10 md:border-b-0 border-b hover:bg-white/5 hover:shadow-[0_0_30px_rgba(255,0,0,0.15)] transition-all duration-300 group"
+              className="px-8 py-12 md:border-r border-dashed border-white/10 md:border-b-0 border-b hover:bg-[#FAFAFA]/5 hover:shadow-[0_0_30px_rgba(255,0,0,0.15)] transition-all duration-300 group"
             >
               <div className="text-6xl font-black mb-4">
                 <span className="text-red-600">
@@ -1222,7 +1320,7 @@ export default function LandingPage() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: 0.2 }}
-              className="px-8 py-12 md:border-r border-dashed border-white/10 md:border-b-0 border-b hover:bg-white/5 hover:shadow-[0_0_30px_rgba(255,0,0,0.15)] transition-all duration-300 group"
+              className="px-8 py-12 md:border-r border-dashed border-white/10 md:border-b-0 border-b hover:bg-[#FAFAFA]/5 hover:shadow-[0_0_30px_rgba(255,0,0,0.15)] transition-all duration-300 group"
             >
               <div className="text-6xl font-black mb-4">
                 <span className="text-red-600">高</span>
@@ -1240,7 +1338,7 @@ export default function LandingPage() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: 0.4 }}
-              className="px-8 py-12 hover:bg-white/5 hover:shadow-[0_0_30px_rgba(255,0,0,0.15)] transition-all duration-300 group"
+              className="px-8 py-12 hover:bg-[#FAFAFA]/5 hover:shadow-[0_0_30px_rgba(255,0,0,0.15)] transition-all duration-300 group"
             >
               <div className="text-6xl font-black mb-4">
                 <span className="text-red-600">
@@ -1266,14 +1364,12 @@ export default function LandingPage() {
 
 
       {/* 分隔線 */}
-      <div className="max-w-7xl mx-auto px-6">
-        <div className="border-b-4 border-gray-500/50"></div>
-      </div>
+      <div className="w-full h-1 animate-[red-line-glow_3s_linear_infinite_alternate]"></div>
 
 
 
       {/* 設定預覽區塊 */}
-      <section className="py-24 px-6 bg-[#050505]">
+      <section id="setup" className="py-24 px-6 bg-[#0A0A0A]">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
             <h2 className="text-4xl md:text-5xl font-black mb-6 text-white leading-relaxed">只需三步，喚醒您的專屬店長</h2>
@@ -1529,7 +1625,7 @@ export default function LandingPage() {
                 </div>
                 <span className="text-green-500 font-bold text-sm">運行中</span>
               </div>
-              <div className="bg-black rounded-xl p-4">
+              <div className="bg-[#0A0A0A] rounded-xl p-4">
                 <div className="space-y-2">
                   <div className="flex items-center gap-2">
                     <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
@@ -1554,7 +1650,7 @@ export default function LandingPage() {
 
       {/* 價格方案 - 白色版本 */}
 
-      <section id="pricing" className="py-32 px-6 bg-white">
+      <section id="pricing" className="py-32 px-6 bg-[#FAFAFA]">
 
         <div className="max-w-7xl mx-auto">
 
@@ -1570,7 +1666,7 @@ export default function LandingPage() {
 
             {/* 基礎啟航版 (Free) */}
 
-            <div className="p-10 bg-white border-2 border-gray-200 rounded-[32px] hover:border-gray-300 transition-all group">
+            <div className="p-10 bg-[#FAFAFA] border-2 border-gray-200 rounded-[32px] hover:border-gray-300 transition-all group">
 
               <h4 className="text-xl font-bold mb-2 text-gray-900">基礎啟航版 (Basic)</h4>
 
@@ -1596,7 +1692,7 @@ export default function LandingPage() {
 
               </ul>
 
-              <Link href="/register" className="block w-full py-4 bg-white text-gray-900 text-center rounded-2xl font-black border-2 border-gray-300 hover:border-gray-900 hover:-translate-y-1 transition-all">
+              <Link href="/register" className="block w-full py-4 bg-[#FAFAFA] text-gray-900 text-center rounded-2xl font-black border-2 border-gray-300 hover:border-gray-900 hover:-translate-y-1 transition-all">
 
                 立即開始
 
@@ -1636,7 +1732,7 @@ export default function LandingPage() {
 
               </div>
 
-              <div className="absolute top-6 left-6 bg-black border-2 border-red-500 text-red-500 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-tighter">
+              <div className="absolute top-6 left-6 bg-[#0A0A0A] border-2 border-red-500 text-red-500 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-tighter">
 
                 早鳥支持價
 
@@ -1710,31 +1806,263 @@ export default function LandingPage() {
 
 
 
-      {/* Footer */}
+      {/* Site Footer */}
 
-      <footer className="py-20 border-t border-gray-100 bg-white">
+      <footer className="bg-[#0A0A0A] border-t border-white/5 pt-16 pb-8">
 
-        <div className="max-w-7xl mx-auto px-6 text-center">
+        <div className="max-w-7xl mx-auto px-6">
 
-          <div className="flex justify-center mb-8">
+          {/* 四欄佈局 */}
 
-            <img 
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12 mb-12">
 
-              src="/Logo.png" 
+            {/* 第一欄：品牌與精神 */}
 
-              alt="Logo" 
+            <div>
 
-              className="w-16 h-16 object-contain"
+              <div className="mb-6">
 
-            />
+                <img 
+
+                  src="/Logo.png" 
+
+                  alt="Digital Manager Logo" 
+
+                  className="w-12 h-12 object-contain mb-4"
+
+                />
+
+                <h3 className="text-white font-bold text-lg mb-2">Digital Manager</h3>
+
+              </div>
+
+              <p className="text-gray-400 text-sm leading-relaxed">
+
+                您的 AI 數位店長 — 讓經營回歸簡單。
+
+              </p>
+
+            </div>
+
+
+
+            {/* 第二欄：產品服務 */}
+
+            <div>
+
+              <h4 className="text-white font-bold mb-4">產品服務</h4>
+
+              <ul className="space-y-3">
+
+                <li>
+
+                  <Link href="#features" className="text-gray-400 text-sm hover:text-white transition-colors">
+
+                    核心功能
+
+                  </Link>
+
+                </li>
+
+                <li>
+
+                  <Link href="#industry-scenarios" className="text-gray-400 text-sm hover:text-white transition-colors">
+
+                    行業應用
+
+                  </Link>
+
+                </li>
+
+                <li>
+
+                  <Link href="#pricing" className="text-gray-400 text-sm hover:text-white transition-colors">
+
+                    價格方案
+
+                  </Link>
+
+                </li>
+
+              </ul>
+
+            </div>
+
+
+
+            {/* 第三欄：技術支援 */}
+
+            <div>
+
+              <h4 className="text-white font-bold mb-4">技術支援</h4>
+
+              <ul className="space-y-3">
+
+                <li>
+
+                  <Link href="#" className="text-gray-400 text-sm hover:text-white transition-colors">
+
+                    新手教學
+
+                  </Link>
+
+                </li>
+
+                <li>
+
+                  <Link href="#" className="text-gray-400 text-sm hover:text-white transition-colors">
+
+                    API 說明
+
+                  </Link>
+
+                </li>
+
+                <li>
+
+                  <Link href="#" className="text-gray-400 text-sm hover:text-white transition-colors">
+
+                    常見問題
+
+                  </Link>
+
+                </li>
+
+              </ul>
+
+            </div>
+
+
+
+            {/* 第四欄：聯繫我們 */}
+
+            <div>
+
+              <h4 className="text-white font-bold mb-4">聯繫我們</h4>
+
+              <ul className="space-y-3">
+
+                <li>
+
+                  <a href="mailto:attak.company@gmail.com" className="text-gray-400 text-sm hover:text-red-500 transition-colors flex items-center gap-2">
+
+                    <Mail className="w-4 h-4" />
+
+                    attak.company@gmail.com
+
+                  </a>
+
+                </li>
+
+                <li>
+
+                  <a href="#" className="text-gray-400 text-sm hover:text-red-500 transition-colors flex items-center gap-2">
+
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" className="w-4 h-4 fill-current">
+
+                      <path d="M224.1 141c-63.6 0-117.1 19.9-144.6 51.4-15.8 17.9-24.4 40.1-24.4 65.2 0 27.9 11.2 54.1 31.5 73.9 23.2 22.6 57.5 35.8 94.2 37.5v45.5c0 6.5 7.4 10.2 12.6 6.4l62.2-45.2c24.7-2.5 48.1-10.5 67.4-23.2 22.3-14.8 35.1-36.3 35.1-59.4 0-25.1-8.6-47.3-24.4-65.2-27.5-31.5-81-51.4-144.6-51.4zm0 20c55.6 0 102.8 17.5 126.4 44.6 13.2 15 20.4 33.3 20.4 52 0 16.3-5.6 31.5-15.8 43.7-17.2 20.4-46.6 32.9-79.3 34.3l-4.3.2-50.5 36.7v-37.3l-4.3-.2c-32.7-1.4-62.1-13.9-79.3-34.3-10.2-12.2-15.8-27.4-15.8-43.7 0-18.7 7.2-37 20.4-52 23.6-27.1 70.8-44.6 126.4-44.6z"/>
+
+                    </svg>
+
+                    聯繫 LINE 專人客服
+
+                  </a>
+
+                </li>
+
+                <li>
+
+                  <a href="#" className="text-gray-400 text-sm hover:text-red-500 transition-colors flex items-center gap-2">
+
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-4 h-4 fill-current">
+
+                      <path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z"/>
+
+                    </svg>
+
+                    Instagram
+
+                  </a>
+
+                </li>
+
+              </ul>
+
+            </div>
 
           </div>
 
-          <p className="text-sm font-bold text-gray-400 uppercase tracking-widest">
 
-            © 2026 Digital Manager AI. 為小型商戶而生。
 
-          </p>
+          {/* 底部版權宣告與法律聲明 */}
+
+          <div className="border-t border-white/5 pt-8">
+
+            <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
+
+              <p className="text-gray-500 text-xs">
+
+                © 2026 Digital Manager. All rights reserved.
+
+              </p>
+
+              <div className="flex gap-4">
+
+                <Link href="/privacy" className="text-gray-500 text-xs hover:text-white transition-colors">
+
+                  隱私權政策
+
+                </Link>
+
+                <span className="text-gray-600 text-xs">|</span>
+
+                <Link href="/terms" className="text-gray-500 text-xs hover:text-white transition-colors">
+
+                  服務條款
+
+                </Link>
+
+              </div>
+
+            </div>
+
+            <p className="text-center text-gray-600 text-xs mb-4">
+
+              Made by Attak團隊 with ❤️
+
+            </p>
+
+            {/* 法律免責聲明 */}
+
+            <div className="space-y-2 text-center">
+
+              <p className="text-[10px] text-gray-600 leading-relaxed">
+
+                LINE is a trademark of LY Corporation. Gemini is a trademark of Google LLC. All other trademarks are the property of their respective owners.
+
+              </p>
+
+              <p className="text-[10px] text-gray-600 leading-relaxed">
+
+                AI 輔助回覆僅供參考，系統不對 AI 生成內容之絕對準確性負責。
+
+              </p>
+
+              <p className="text-[10px] text-gray-600 leading-relaxed">
+
+                我們重視您的隱私，所有連線均經過加密處理，確保您的密鑰與通訊紀錄安全無虞。
+
+              </p>
+
+              <p className="text-[10px] text-gray-600 leading-relaxed">
+
+                7 天免費試用期內可隨時取消訂閱並申請退費。後續訂閱將依月計費，您可隨時於後台停止續約。
+
+              </p>
+
+            </div>
+
+          </div>
 
         </div>
 
