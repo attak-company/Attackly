@@ -1,7 +1,7 @@
 "use client";
 
 import { Bell, ChevronDown, User, LogOut, Settings, UserPlus } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase";
@@ -9,8 +9,33 @@ import { createClient } from "@/lib/supabase";
 export function Header() {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showAccount, setShowAccount] = useState(false);
+  const [username, setUsername] = useState<string>("用戶");
+  const [notificationCount, setNotificationCount] = useState(0);
   const router = useRouter();
   const supabase = createClient();
+
+  useEffect(() => {
+    const fetchUsername = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: userData } = await supabase
+            .from('users')
+            .select('username')
+            .eq('id', user.id)
+            .single();
+          
+          if (userData) {
+            setUsername(userData.username);
+          }
+        }
+      } catch (error) {
+        console.error("Error fetching username:", error);
+      }
+    };
+
+    fetchUsername();
+  }, [supabase]);
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -19,7 +44,7 @@ export function Header() {
   };
 
   const handleAccountSettings = () => {
-    router.push("/dashboard/settings");
+    router.push("/dashboard/account");
     setShowAccount(false);
   };
 
@@ -34,11 +59,15 @@ export function Header() {
     <header className="h-16 bg-black text-white flex items-center justify-between px-6 fixed top-0 left-0 right-0 z-[3000] shadow-[0_1px_0_rgba(255,255,255,0.08)_inset]">
       <div className="flex items-center">
         <div className="flex items-center gap-2">
-          {/* Logo Placeholder */}
-          <div className="w-8 h-8 bg-white/20 rounded flex items-center justify-center">
-            <span className="text-xs font-bold text-white">數位</span>
+          <img 
+            src="/Logo.png" 
+            alt="Logo" 
+            className="w-11 h-11 object-contain"
+          />
+          <div className="flex flex-col">
+            <span className="text-lg font-bold tracking-tight leading-tight">Digital Manager</span>
+            <span className="text-xs text-gray-400 tracking-wide">數位店長</span>
           </div>
-          <span className="text-lg font-bold tracking-tight">數位店長</span>
         </div>
       </div>
 
@@ -50,9 +79,11 @@ export function Header() {
             className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-md transition-all relative"
           >
             <Bell className="h-5 w-5" />
-            <span className="absolute top-1.5 right-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
-              1
-            </span>
+            {notificationCount > 0 && (
+              <span className="absolute top-1.5 right-1.5 flex h-4 min-w-[16px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold text-white">
+                {notificationCount}
+              </span>
+            )}
           </button>
 
           {showNotifications && (
@@ -77,10 +108,7 @@ export function Header() {
             onClick={() => setShowAccount(!showAccount)}
             className="flex items-center gap-2 px-3 py-1.5 text-white/90 hover:text-white hover:bg-white/10 rounded-md transition-all"
           >
-            <div className="w-8 h-8 rounded-full bg-gray-700 flex items-center justify-center text-sm font-medium border-2 border-white/20">
-              U
-            </div>
-            <span className="text-sm font-medium hidden md:inline">用戶</span>
+            <span className="text-sm font-medium">{username}</span>
             <ChevronDown className={cn("h-3 w-3 transition-transform", showAccount && "rotate-180")} />
           </button>
 
@@ -92,13 +120,6 @@ export function Header() {
               >
                 <Settings className="h-4 w-4" />
                 <span>帳戶設定</span>
-              </button>
-              <button
-                onClick={handleAddUser}
-                className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-              >
-                <UserPlus className="h-4 w-4" />
-                <span>新增帳號</span>
               </button>
               <div className="h-px bg-gray-100 my-1" />
               <button

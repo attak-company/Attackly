@@ -111,17 +111,6 @@ export function Sidebar() {
           </div>
         </div>
       </nav>
-      <div className="p-4 border-t border-[#e9ecef]">
-        <div className="flex items-center px-4 py-2">
-          <div className="w-8 h-8 rounded-full bg-black/5 flex items-center justify-center mr-3">
-            <span className="text-xs font-bold text-black">DS</span>
-          </div>
-          <div>
-            <p className="text-sm font-medium">商家管理員</p>
-            <p className="text-xs text-gray-500">商戶 ID: 12345</p>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

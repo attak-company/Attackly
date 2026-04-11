@@ -15,6 +15,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 # Serve static files from frontend/public directory
@@ -24,6 +25,10 @@ if os.path.exists(static_dir):
 
 # API Routes
 app.include_router(api_router, prefix="/api/v1")
+
+# Chats API
+from app.api.chats import router as chats_router
+app.include_router(chats_router, prefix="/api/v1", tags=["chats"])
 
 manager = ConnectionManager()
 
