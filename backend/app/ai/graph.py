@@ -17,29 +17,38 @@ class AgentState(TypedDict):
     faq_context: str
     booking_data: Dict[str, Any]
     next_node: str
+    system_prompt: str
 
 # 設定 Gemini
 genai.configure(api_key=settings.GEMINI_API_KEY)
 # 定義工具列表供 Gemini
 tools = [get_available_slots_fn, create_booking_fn]
 
-# 初始化模型並綁定工具
-model = genai.GenerativeModel('gemini-1.5-pro', tools=tools)
+# 初始化模型並綁定工具 (使用 Gemini 2.0 Flash)
+model = genai.GenerativeModel('gemini-2.5-flash', tools=tools)
 
 def classify_intent(state: AgentState) -> AgentState:
     """
-    使用 Gemini 判斷使用者的意圖：預約 (booking), FAQ (faq), 或 閒聊 (small_talk)
+    使用 Gemini 判斷使用者的意圖：預約 (booking), FAQ (faq), 店家資料查詢 (store_info), 或 閒聊 (small_talk)
     """
     user_msg = state["messages"][-1]["content"]
-    prompt = f"請判斷以下訊息的意圖：'{user_msg}'。選項有：booking, faq, small_talk。僅回傳選項單詞。"
+    prompt = f"""請判斷以下訊息的意圖：'{user_msg}'
+
+選項說明：
+- booking：預約相關問題（如：我想預約、可以預約什麼時段）
+- faq：一般常見問題（如：穿刺會痛嗎、需要多久時間、什麼價格）
+- store_info：店家基本資料查詢（如：地址、電話、營業時間、位置、店家類型）
+- small_talk：閒聊或問候（如：你好、哈囉）
+
+請僅回傳選項單詞（booking/faq/store_info/small_talk）。"""
     
-    # 這裡不帶工具，純分類
-    simple_model = genai.GenerativeModel('gemini-1.5-pro')
+    # 這裡不帶工具，純分類 (使用 Gemini 2.0 Flash)
+    simple_model = genai.GenerativeModel('gemini-2.5-flash')
     response = simple_model.generate_content(prompt)
     intent = response.text.strip().lower()
     
     # 防止異常回覆
-    if intent not in ["booking", "faq", "small_talk"]:
+    if intent not in ["booking", "faq", "store_info", "small_talk"]:
         intent = "small_talk"
         
     state["intent"] = intent
@@ -84,17 +93,18 @@ def response_generator(state: AgentState) -> AgentState:
     user_msg = state["messages"][-1]["content"]
     intent = state["intent"]
     faq = state["faq_context"]
-    
-    system_prompt = f"你是『數位店長』AI客服。商戶ID是{state['merchant_id']}。目前意圖是{intent}。"
+
+    # 使用自定義的 system prompt，如果沒有則使用預設
+    system_prompt = state.get("system_prompt", f"你是『數位店長』AI客服。商戶ID是{state['merchant_id']}。目前意圖是{intent}。")
     if faq:
         system_prompt += f"\n參考知識庫內容：{faq}"
-    
-    prompt = f"{system_prompt}\n使用者訊息：{user_msg}\n請以親切專業的語氣回覆客人的問題。"
-    
-    simple_model = genai.GenerativeModel('gemini-1.5-pro')
+
+    prompt = f"{system_prompt}\n使用者訊息：{user_msg}\n請回覆客人的問題。"
+
+    simple_model = genai.GenerativeModel('gemini-2.5-flash')
     response = simple_model.generate_content(prompt)
     state["messages"].append({"role": "assistant", "content": response.text.strip()})
-    
+
     print(f"--- AI 總結回覆：{response.text.strip()[:20]}... ---")
     return state
 
@@ -115,6 +125,7 @@ def route_intent(state: AgentState):
         return "faq_node"
     elif state["intent"] == "booking":
         return "booking_node"
+    # store_info 和 small_talk 都直接跳到 response_generator
     return "responder"
 
 workflow.add_conditional_edges(

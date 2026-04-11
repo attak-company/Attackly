@@ -125,7 +125,7 @@ export function Sidebar() {
                 "w-4 h-4 mr-3",
                 pathname === "/dashboard/settings/ai" ? "text-[#6366f1]" : "text-[#495057]"
               )} />
-              AI 設定
+              AI 客服設定
             </Link>
             <Link
               href="/dashboard/settings/store"
@@ -143,7 +143,7 @@ export function Sidebar() {
                 "w-4 h-4 mr-3",
                 pathname === "/dashboard/settings/store" ? "text-[#6366f1]" : "text-[#495057]"
               )} />
-              店家資料
+              店家設定
             </Link>
           </div>
         </div>
