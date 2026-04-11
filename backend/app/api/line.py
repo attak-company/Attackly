@@ -1,16 +1,45 @@
 from fastapi import APIRouter, Request, Header, HTTPException
 from linebot import LineBotApi, WebhookHandler
-from linebot.exceptions import InvalidSignatureError
+from linebot.exceptions import InvalidSignatureError, LineBotApiError
 from linebot.models import MessageEvent, TextMessage, TextSendMessage
 from app.core.config import settings
 from app.ai.graph import agent_app
 import uuid
 from supabase import create_client
+from pydantic import BaseModel
 
 router = APIRouter()
 
+class VerifyCredentialsRequest(BaseModel):
+    channel_access_token: str
+    channel_secret: str
+
 # 初始化 Supabase 客戶端
 supabase = create_client(settings.SUPABASE_URL, settings.SUPABASE_KEY)
+
+@router.post("/verify")
+async def verify_credentials(request: VerifyCredentialsRequest):
+    """驗證 LINE credentials 格式"""
+    print(f"驗證請求: token={request.channel_access_token[:20] if request.channel_access_token else 'None'}..., secret={request.channel_secret[:10] if request.channel_secret else 'None'}...")
+    
+    if not request.channel_access_token or not request.channel_secret:
+        return {
+            "valid": False,
+            "message": "Channel Access Token 和 Channel Secret 都不能為空"
+        }
+    
+    # 檢查 Channel Secret 格式：32 字符
+    if len(request.channel_secret) != 32:
+        return {
+            "valid": False,
+            "message": "Channel Secret 必須是 32 個字符"
+        }
+    
+    # 如果格式正確，返回驗證成功
+    return {
+        "valid": True,
+        "message": "格式正確"
+    }
 
 async def get_user_line_config(user_id: str):
     """從資料庫獲取用戶的 LINE 設定"""
@@ -93,8 +122,8 @@ async def process_line_message(event: MessageEvent, user_id: str, line_bot_api: 
         except Exception as e:
             print(f"Error getting user profile: {e}")
 
-        # 檢查是否已存在該 LINE 用戶的對話
-        existing_conversation = supabase.table('conversations').select('*').eq('line_user_id', line_user_id).eq('id', user_id).execute()
+        # 檢查是否已存在該 LINE 用戶的對話（針對當前後端用戶）
+        existing_conversation = supabase.table('conversations').select('*').eq('line_user_id', line_user_id).eq('user_id', user_id).execute()
 
         conversation_id = None
         if existing_conversation.data:
@@ -112,9 +141,10 @@ async def process_line_message(event: MessageEvent, user_id: str, line_bot_api: 
 
             supabase.table('conversations').update(update_data).eq('id', conversation_id).execute()
         else:
-            # 創建新對話
+            # 創建新對話（使用唯一 UUID）
             new_conversation_data = {
-                'id': user_id,
+                'id': str(uuid.uuid4()),
+                'user_id': user_id,
                 'user_name': display_name if display_name else f'LINE User {line_user_id[:8]}',
                 'line_user_id': line_user_id,
                 'last_message': text,
@@ -132,7 +162,8 @@ async def process_line_message(event: MessageEvent, user_id: str, line_bot_api: 
         supabase.table('messages').insert({
             'conversation_id': conversation_id,
             'role': 'user',
-            'content': text
+            'content': text,
+            'timestamp': 'now()'
         }).execute()
 
         print(f"User message saved to database: {conversation_id}")
@@ -145,13 +176,22 @@ async def process_line_message(event: MessageEvent, user_id: str, line_bot_api: 
         TextSendMessage(text=ai_response)
     )
 
-    # 然後儲存 AI 回應（異步，不影響回覆速度）
-    try:
-        supabase.table('messages').insert({
-            'conversation_id': conversation_id,
-            'role': 'ai',
-            'content': ai_response
-        }).execute()
-        print(f"AI response saved to database: {conversation_id}")
-    except Exception as e:
-        print(f"Error saving AI response to database: {e}")
+    # 異步儲存 AI 回應（不阻塞 webhook 響應）
+    async def save_ai_response():
+        try:
+            # 延遲 0.5 秒確保前端輪詢有時間檢測到用戶訊息
+            import asyncio
+            await asyncio.sleep(0.5)
+            
+            supabase.table('messages').insert({
+                'conversation_id': conversation_id,
+                'role': 'ai',
+                'content': ai_response,
+                'timestamp': 'now()'
+            }).execute()
+            print(f"AI response saved to database: {conversation_id}")
+        except Exception as e:
+            print(f"Error saving AI response to database: {e}")
+    
+    import asyncio
+    asyncio.create_task(save_ai_response())

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { PageHeader } from "@/components/page-header";
 import { Key, Save, Copy, Check } from "lucide-react";
 import { createClient } from "@/lib/supabase";
@@ -15,6 +15,10 @@ export default function LineSettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [validating, setValidating] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
+  const [validationStatus, setValidationStatus] = useState<'idle' | 'validating' | 'valid' | 'invalid'>('idle');
+  const [validationMessage, setValidationMessage] = useState<string>('');
   const supabase = createClient();
 
   const baseUrl = process.env.NEXT_PUBLIC_API_URL?.replace('/api/v1', '') || 'http://localhost:8000';
@@ -52,14 +56,76 @@ export default function LineSettingsPage() {
     fetchUserData();
   }, [supabase]);
 
+  // Debounce 驗證函數
+  const validateCredentials = useCallback(
+    (token: string, secret: string) => {
+      if (!token || !secret) {
+        setValidationStatus('idle');
+        return;
+      }
+
+      setValidationStatus('validating');
+      setValidationError(null);
+
+      const timer = setTimeout(async () => {
+        try {
+          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/line/verify`, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              channel_access_token: token,
+              channel_secret: secret,
+            }),
+          });
+
+          const result = await response.json();
+
+          if (result.valid) {
+            setValidationStatus('valid');
+            setValidationMessage(result.message || '格式正確');
+          } else {
+            setValidationStatus('invalid');
+            setValidationError(result.message || 'Credentials 驗證失敗');
+          }
+        } catch (error: any) {
+          setValidationStatus('invalid');
+          setValidationError(`驗證過程發生錯誤: ${error.message}`);
+        }
+      }, 800); // 800ms debounce
+
+      return () => clearTimeout(timer);
+    },
+    []
+  );
+
+  // 當 credentials 改變時觸發驗證
+  useEffect(() => {
+    validateCredentials(config.lineApiKey, config.lineSecret);
+  }, [config.lineApiKey, config.lineSecret, validateCredentials]);
+
   const handleSave = async () => {
     setSaving(true);
     setSaveSuccess(false);
+    setValidationError(null);
     
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) {
         throw new Error("User not authenticated");
+      }
+
+      // 如果有輸入 credentials，檢查驗證狀態
+      if (config.lineApiKey && config.lineSecret) {
+        if (validationStatus === 'invalid') {
+          setValidationError('請輸入正確的 LINE Credentials');
+          return;
+        }
+        if (validationStatus !== 'valid') {
+          setValidationError('請等待驗證完成或輸入正確的 Credentials');
+          return;
+        }
       }
       
       // 先檢查用戶記錄是否存在
@@ -132,7 +198,15 @@ export default function LineSettingsPage() {
               value={config.lineApiKey}
               onChange={(e) => setConfig({ ...config, lineApiKey: e.target.value })}
               disabled={loading}
-              className="block w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-black focus:border-black disabled:bg-gray-100 text-gray-900"
+              className={`block w-full px-4 py-2 border rounded-lg focus:ring-2 focus:outline-none disabled:bg-gray-100 text-gray-900 transition-colors ${
+                validationStatus === 'valid' 
+                  ? 'border-green-500 focus:ring-green-500' 
+                  : validationStatus === 'invalid' 
+                  ? 'border-red-500 focus:ring-red-500' 
+                  : validationStatus === 'validating'
+                  ? 'border-yellow-500 focus:ring-yellow-500'
+                  : 'border-gray-300 focus:border-black'
+              }`}
               placeholder="請輸入 LINE Channel Access Token"
             />
           </div>
@@ -143,7 +217,15 @@ export default function LineSettingsPage() {
               value={config.lineSecret}
               onChange={(e) => setConfig({ ...config, lineSecret: e.target.value })}
               disabled={loading}
-              className="block w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-black focus:border-black disabled:bg-gray-100 text-gray-900"
+              className={`block w-full px-4 py-2 border rounded-lg focus:ring-2 focus:outline-none disabled:bg-gray-100 text-gray-900 transition-colors ${
+                validationStatus === 'valid' 
+                  ? 'border-green-500 focus:ring-green-500' 
+                  : validationStatus === 'invalid' 
+                  ? 'border-red-500 focus:ring-red-500' 
+                  : validationStatus === 'validating'
+                  ? 'border-yellow-500 focus:ring-yellow-500'
+                  : 'border-gray-300 focus:border-black'
+              }`}
               placeholder="請輸入 LINE Channel Secret"
             />
           </div>
@@ -176,13 +258,33 @@ export default function LineSettingsPage() {
             </div>
             <p className="text-xs text-gray-700 mt-2">URL 格式：https://your-domain.com/api/webhook/你的註冊ID</p>
           </div>
+          {validationStatus === 'validating' && (
+            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+              <p className="text-sm text-yellow-800">驗證中...</p>
+            </div>
+          )}
+          {validationStatus === 'valid' && (
+            <div className="bg-green-50 border border-green-200 rounded-lg p-3 mb-4">
+              <p className="text-sm text-green-800">{validationMessage || '格式正確'}</p>
+            </div>
+          )}
+          {validationStatus === 'invalid' && validationError && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
+              <p className="text-sm text-red-800">{validationError}</p>
+            </div>
+          )}
           <div className="flex justify-end pt-4">
             <button
               onClick={handleSave}
-              disabled={saving || loading}
+              disabled={saving || loading || validating || (Boolean(config.lineApiKey) && Boolean(config.lineSecret) && validationStatus !== 'valid')}
               className="flex items-center gap-2 bg-black text-white px-6 py-2.5 rounded-lg font-bold hover:bg-gray-800 transition-colors disabled:bg-gray-400"
             >
-              {saving ? (
+              {validating ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  驗證中...
+                </>
+              ) : saving ? (
                 <>
                   <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
                   儲存中...

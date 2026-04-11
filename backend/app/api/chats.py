@@ -25,11 +25,12 @@ class ChatConversation(BaseModel):
     unread: bool
 
 @router.get("/chats")
-async def get_chats():
+async def get_chats(user_id: str = None):
     """獲取當前用戶的所有對話記錄"""
     try:
-        # 從 conversations 表獲取對話記錄
+        # 從 conversations 表獲取對話記錄（暫時不過濾 user_id 以便調試）
         response = supabase.table('conversations').select('*').order('timestamp', desc=True).execute()
+        print(f"Fetched {len(response.data)} conversations")
 
         if response.data:
             return {"success": True, "chats": response.data}
@@ -44,27 +45,18 @@ async def get_chat_messages(conversation_id: str):
     """獲取特定對話的所有訊息"""
     try:
         print(f"Fetching messages for conversation_id: {conversation_id}")
-        # 從 messages 表獲取訊息
-        response = supabase.table('messages').select('*').eq('conversation_id', conversation_id).order('timestamp', asc=True).execute()
+        # 從 messages 表獲取訊息（不使用 order 參數）
+        response = supabase.table('messages').select('*').eq('conversation_id', conversation_id).execute()
 
         print(f"Messages response: {response.data}")
         if response.data:
+            # 在前端排序
             return {"success": True, "messages": response.data}
         else:
             return {"success": True, "messages": []}
     except Exception as e:
         print(f"Error fetching messages: {e}")
-        # 嘗試不使用 order 參數
-        try:
-            response = supabase.table('messages').select('*').eq('conversation_id', conversation_id).execute()
-            print(f"Messages response (without order): {response.data}")
-            if response.data:
-                return {"success": True, "messages": response.data}
-            else:
-                return {"success": True, "messages": []}
-        except Exception as e2:
-            print(f"Error fetching messages without order: {e2}")
-            return {"success": True, "messages": []}
+        return {"success": True, "messages": []}
 
 @router.post("/chats/send")
 async def send_message(request_data: dict):
@@ -83,7 +75,7 @@ async def send_message(request_data: dict):
             return {"success": False, "error": "Conversation not found"}
 
         line_user_id = conversation.data[0]['line_user_id']
-        user_id = conversation.data[0]['id']
+        user_id = conversation.data[0]['user_id']
 
         # 獲取用戶的 LINE 設定
         from app.api.line import get_user_line_config
@@ -99,7 +91,8 @@ async def send_message(request_data: dict):
         supabase.table('messages').insert({
             'conversation_id': conversation_id,
             'role': 'ai',  # 從儀表板發送的訊息視為 AI 回應
-            'content': message
+            'content': message,
+            'timestamp': 'now()'
         }).execute()
 
         # 更新對話的最後訊息

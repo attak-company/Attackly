@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { PageHeader } from "@/components/page-header";
 import { MessageSquare, Search, User, Bot, Send } from "lucide-react";
+import { createClient } from "@/lib/supabase";
 
 interface Chat {
   id: string;
@@ -30,47 +31,29 @@ export default function ChatsPage() {
   const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  useEffect(() => {
-    fetchChats();
-  }, []);
-
-  // 輪詢獲取新訊息
-  useEffect(() => {
-    if (!selectedChat) return;
-
-    const interval = setInterval(() => {
-      fetchMessages(selectedChat.id);
-      fetchChats();
-    }, 3000); // 每3秒輪詢一次
-
-    return () => clearInterval(interval);
-  }, [selectedChat]);
+  const hasScrolledRef = useRef(false);
+  const supabase = createClient();
 
   const fetchChats = async () => {
     try {
-      const apiUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/chats`;
+      const { data: { user } } = await supabase.auth.getUser();
+      const userId = user?.id;
+      console.log('Current user ID:', userId);
+
+      const apiUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/chats?user_id=${userId}`;
       console.log('Fetching chats from:', apiUrl);
       const response = await fetch(apiUrl);
-      
+
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
-      
+
       const data = await response.json();
-      console.log('Chats data:', data);
+      console.log('Chats fetched:', data.chats?.length, 'chats');
 
       if (data.success) {
         setChats(data.chats);
-        if (data.chats.length > 0) {
+        if (data.chats.length > 0 && !selectedChat) {
           setSelectedChat(data.chats[0]);
           fetchMessages(data.chats[0].id);
         }
@@ -86,16 +69,56 @@ export default function ChatsPage() {
   const fetchMessages = async (conversationId: string) => {
     try {
       const apiUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/chats/${conversationId}/messages`;
+      console.log('Fetching messages from:', apiUrl);
       const response = await fetch(apiUrl);
       const data = await response.json();
+      console.log('Messages fetched:', data.messages?.length, 'messages');
 
       if (data.success) {
-        setMessages(data.messages);
+        // 按時間戳排序訊息
+        const sortedMessages = data.messages.sort((a: Message, b: Message) =>
+          new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()
+        );
+        setMessages(sortedMessages);
       }
     } catch (error) {
       console.error("Error fetching messages:", error);
     }
   };
+
+  // 初始滾動到底端（僅在進入對話時執行一次）
+  useEffect(() => {
+    if (messages.length > 0 && !hasScrolledRef.current) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      hasScrolledRef.current = true;
+    }
+  }, [messages]);
+
+  // 重置滾動標記當切換對話時
+  useEffect(() => {
+    hasScrolledRef.current = false;
+  }, [selectedChat]);
+
+  useEffect(() => {
+    fetchChats();
+  }, []);
+
+  // 輪詢獲取新訊息
+  useEffect(() => {
+    if (!selectedChat) return;
+
+    console.log('Starting polling for chat:', selectedChat.id);
+    const interval = setInterval(() => {
+      console.log('Polling for new messages...');
+      fetchMessages(selectedChat.id);
+      fetchChats();
+    }, 200); // 每0.2秒輪詢一次
+
+    return () => {
+      console.log('Stopping polling');
+      clearInterval(interval);
+    };
+  }, [selectedChat]);
 
   const handleChatSelect = (chat: Chat) => {
     setSelectedChat(chat);
@@ -171,7 +194,7 @@ export default function ChatsPage() {
                     )}
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-start mb-1">
-                        <h4 className="font-bold text-sm truncate">{chat.display_name || chat.user_name}</h4>
+                        <h4 className="font-bold text-sm text-gray-900 truncate">{chat.display_name || chat.user_name}</h4>
                         <span className="text-[10px] text-gray-400 whitespace-nowrap ml-2">{new Date(chat.timestamp).toLocaleTimeString()}</span>
                       </div>
                       <p className="text-xs text-gray-500 truncate">{chat.last_message}</p>
@@ -199,14 +222,11 @@ export default function ChatsPage() {
                   )}
                   <div>
                     <h3 className="font-bold text-sm">{selectedChat.display_name || selectedChat.user_name}</h3>
-                    <span className="text-[10px] text-green-600 flex items-center gap-1">
-                      <div className="w-1.5 h-1.5 bg-green-600 rounded-full" /> LINE 在線中
-                    </span>
                   </div>
                 </div>
               </div>
 
-              <div className="flex-1 p-6 overflow-y-auto space-y-4">
+              <div className="flex-1 p-6 overflow-y-auto space-y-4 scrollbar-hide">
                 {messages.length === 0 ? (
                   <div className="text-center text-gray-500">暫無訊息</div>
                 ) : (

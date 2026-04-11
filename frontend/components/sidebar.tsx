@@ -3,32 +3,33 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
-import { 
-  LayoutDashboard, 
-  Calendar, 
-  MessageSquare, 
-  Settings, 
+import {
+  LayoutDashboard,
+  Calendar,
+  MessageSquare,
+  Settings,
   FileText,
   UserCheck,
   ChevronDown,
   ChevronRight,
-  Key
+  Key,
+  Store
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "儀表板", href: "/dashboard" },
-  { icon: Calendar, label: "預約管理", href: "/dashboard/calendar" },
+  { icon: Calendar, label: "行事曆", href: "/dashboard/calendar" },
+  { icon: Calendar, label: "預約管理", href: "/dashboard/appointments" },
   { icon: MessageSquare, label: "對話紀錄", href: "/dashboard/chats" },
   { icon: FileText, label: "FAQ 知識庫", href: "/dashboard/faq" },
-  { icon: UserCheck, label: "AI 設定", href: "/dashboard/settings/ai" },
 ];
 
 export function Sidebar() {
   const pathname = usePathname();
   const [settingsExpanded, setSettingsExpanded] = useState(true);
 
-  const isSettingsActive = pathname === "/dashboard/settings" || pathname === "/dashboard/settings/line";
+  const isSettingsActive = pathname === "/dashboard/settings" || pathname === "/dashboard/settings/line" || pathname === "/dashboard/settings/ai" || pathname === "/dashboard/settings/store";
 
   return (
     <div className="flex flex-col h-full overflow-hidden">
@@ -43,7 +44,7 @@ export function Sidebar() {
                 "flex items-center px-5 py-3 text-sm transition-all rounded-lg group relative",
                 isActive 
                   ? "bg-[#e9ecef] text-[#212529] font-semibold border border-[#dee2e6]" 
-                  : "text-[#495057] hover:bg-[#e9ecef] hover:text-[#212529]"
+                  : "text-[#212529] hover:bg-[#e9ecef] hover:text-[#212529]"
               )}
             >
               {isActive && (
@@ -51,7 +52,7 @@ export function Sidebar() {
               )}
               <item.icon className={cn(
                 "w-5 h-5 mr-3 text-center",
-                isActive ? "text-[#6366f1]" : "text-[#6c757d] group-hover:text-[#495057]"
+                isActive ? "text-[#6366f1]" : "text-[#495057] group-hover:text-[#212529]"
               )} />
               {item.label}
             </Link>
@@ -66,7 +67,7 @@ export function Sidebar() {
               "w-full flex items-center px-5 py-3 text-sm transition-all rounded-lg group relative",
               isSettingsActive 
                 ? "bg-[#e9ecef] text-[#212529] font-semibold border border-[#dee2e6]" 
-                : "text-[#495057] hover:bg-[#e9ecef] hover:text-[#212529]"
+                : "text-[#212529] hover:bg-[#e9ecef] hover:text-[#212529]"
             )}
           >
             {isSettingsActive && (
@@ -74,7 +75,7 @@ export function Sidebar() {
             )}
             <Settings className={cn(
               "w-5 h-5 mr-3 text-center",
-              isSettingsActive ? "text-[#6366f1]" : "text-[#6c757d] group-hover:text-[#495057]"
+              isSettingsActive ? "text-[#6366f1]" : "text-[#495057] group-hover:text-[#212529]"
             )} />
             <span className="flex-1 text-left">系統設定</span>
             {settingsExpanded ? (
@@ -87,7 +88,7 @@ export function Sidebar() {
           <div
             className={cn(
               "ml-4 mt-1 space-y-1 overflow-hidden transition-all duration-300 ease-in-out",
-              settingsExpanded ? "max-h-20 opacity-100" : "max-h-0 opacity-0"
+              settingsExpanded ? "max-h-36 opacity-100" : "max-h-0 opacity-0"
             )}
           >
             <Link
@@ -96,7 +97,7 @@ export function Sidebar() {
                 "flex items-center px-5 py-2.5 text-sm transition-all rounded-lg group",
                 pathname === "/dashboard/settings/line"
                   ? "bg-[#e9ecef] text-[#212529] font-semibold border border-[#dee2e6]"
-                  : "text-[#495057] hover:bg-[#e9ecef] hover:text-[#212529]"
+                  : "text-[#212529] hover:bg-[#e9ecef] hover:text-[#212529]"
               )}
             >
               {pathname === "/dashboard/settings/line" && (
@@ -104,9 +105,45 @@ export function Sidebar() {
               )}
               <Key className={cn(
                 "w-4 h-4 mr-3",
-                pathname === "/dashboard/settings/line" ? "text-[#6366f1]" : "text-[#6c757d]"
+                pathname === "/dashboard/settings/line" ? "text-[#6366f1]" : "text-[#495057]"
               )} />
               LINE 設定
+            </Link>
+            <Link
+              href="/dashboard/settings/ai"
+              className={cn(
+                "flex items-center px-5 py-2.5 text-sm transition-all rounded-lg group",
+                pathname === "/dashboard/settings/ai"
+                  ? "bg-[#e9ecef] text-[#212529] font-semibold border border-[#dee2e6]"
+                  : "text-[#212529] hover:bg-[#e9ecef] hover:text-[#212529]"
+              )}
+            >
+              {pathname === "/dashboard/settings/ai" && (
+                <div className="absolute left-[-13px] top-1/2 -translate-y-1/2 w-[3px] h-4 bg-[#6366f1] rounded-sm" />
+              )}
+              <UserCheck className={cn(
+                "w-4 h-4 mr-3",
+                pathname === "/dashboard/settings/ai" ? "text-[#6366f1]" : "text-[#495057]"
+              )} />
+              AI 設定
+            </Link>
+            <Link
+              href="/dashboard/settings/store"
+              className={cn(
+                "flex items-center px-5 py-2.5 text-sm transition-all rounded-lg group",
+                pathname === "/dashboard/settings/store"
+                  ? "bg-[#e9ecef] text-[#212529] font-semibold border border-[#dee2e6]"
+                  : "text-[#212529] hover:bg-[#e9ecef] hover:text-[#212529]"
+              )}
+            >
+              {pathname === "/dashboard/settings/store" && (
+                <div className="absolute left-[-13px] top-1/2 -translate-y-1/2 w-[3px] h-4 bg-[#6366f1] rounded-sm" />
+              )}
+              <Store className={cn(
+                "w-4 h-4 mr-3",
+                pathname === "/dashboard/settings/store" ? "text-[#6366f1]" : "text-[#495057]"
+              )} />
+              店家資料
             </Link>
           </div>
         </div>
