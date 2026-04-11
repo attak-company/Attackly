@@ -2680,7 +2680,7 @@ export default function LandingPage() {
 
 
 
-                    <AnimatePresence mode="wait">
+                    <AnimatePresence mode="popLayout">
 
                       {industries[selectedIndustry].chatMessages.map((msg, idx) => {
 
