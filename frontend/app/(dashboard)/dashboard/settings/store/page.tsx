@@ -91,7 +91,7 @@ export default function StoreSettingsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="店家資料" />
+      <PageHeader title="店家設定" />
 
       <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
         <div className="space-y-6">

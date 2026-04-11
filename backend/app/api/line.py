@@ -46,7 +46,7 @@ async def get_user_line_config(user_id: str):
     try:
         # 從 users 表讀取用戶的 LINE 設定
         response = supabase.table('users').select('line_channel_access_token, line_channel_secret').eq('id', user_id).execute()
-        
+
         if response.data:
             user_config = response.data[0]
             return {
@@ -65,6 +65,44 @@ async def get_user_line_config(user_id: str):
         return {
             'line_channel_access_token': settings.LINE_CHANNEL_ACCESS_TOKEN,
             'line_channel_secret': settings.LINE_CHANNEL_SECRET
+        }
+
+async def get_user_ai_settings(user_id: str):
+    """從資料庫獲取用戶的 AI 設定和店家資料"""
+    try:
+        response = supabase.table('users').select('ai_settings, store_name, store_address, store_phone, store_type').eq('id', user_id).execute()
+
+        if response.data:
+            user_data = response.data[0]
+            ai_settings = user_data.get('ai_settings', {})
+            return {
+                'tone': ai_settings.get('tone', 'friendly'),
+                'rules': ai_settings.get('rules', []),
+                'store_name': user_data.get('store_name', ''),
+                'store_address': user_data.get('store_address', ''),
+                'store_phone': user_data.get('store_phone', ''),
+                'store_type': user_data.get('store_type', '')
+            }
+        else:
+            # 預設設定
+            return {
+                'tone': 'friendly',
+                'rules': [],
+                'store_name': '',
+                'store_address': '',
+                'store_phone': '',
+                'store_type': ''
+            }
+    except Exception as e:
+        print(f"Error fetching user AI settings: {e}")
+        # 出錯時使用預設設定
+        return {
+            'tone': 'friendly',
+            'rules': [],
+            'store_name': '',
+            'store_address': '',
+            'store_phone': '',
+            'store_type': ''
         }
 
 @router.post("/{user_id}")
@@ -106,8 +144,66 @@ async def process_line_message(event: MessageEvent, user_id: str, line_bot_api: 
 
     print(f"Processing message from LINE user: {line_user_id}")
 
-    # 暫時使用簡單回應，避免 Google Cloud credentials 錯誤
-    ai_response = "收到您的訊息！我還在學習中，稍後會有更智能的回應。"
+    # 獲取用戶的 AI 設定和店家資料
+    ai_settings = await get_user_ai_settings(user_id)
+    print(f"AI settings: tone={ai_settings['tone']}, rules_count={len(ai_settings['rules'])}")
+
+    # 構建 system prompt
+    system_prompt = "你是『數位店長』AI客服。"
+
+    # 添加店家資料
+    if ai_settings['store_name']:
+        system_prompt += f"\n店家名稱：{ai_settings['store_name']}"
+    if ai_settings['store_address']:
+        system_prompt += f"\n店家地址：{ai_settings['store_address']}"
+    if ai_settings['store_phone']:
+        system_prompt += f"\n店家電話：{ai_settings['store_phone']}"
+    if ai_settings['store_type']:
+        system_prompt += f"\n店家類型：{ai_settings['store_type']}"
+
+    # 添加語氣設定
+    tone_map = {
+        'friendly': '親切友善',
+        'professional': '專業正式',
+        'casual': '輕鬆隨性'
+    }
+    system_prompt += f"\n請使用{tone_map.get(ai_settings['tone'], '親切友善')}的語氣回覆。"
+
+    # 添加規則
+    if ai_settings['rules']:
+        system_prompt += "\n請遵守以下回覆規則："
+        for rule in ai_settings['rules']:
+            if rule.get('condition') and rule.get('action'):
+                system_prompt += f"\n- 條件：{rule['condition']}，違反時：{rule['action']}"
+
+    print(f"System prompt: {system_prompt[:200]}...")
+
+    # 使用 AI graph 生成回應
+    try:
+        from app.ai.graph import AgentState
+
+        # 構建初始狀態
+        initial_state = {
+            "messages": [{"role": "user", "content": text}],
+            "merchant_id": user_id,
+            "intent": "",
+            "faq_context": "",
+            "booking_data": {},
+            "next_node": "",
+            "system_prompt": system_prompt
+        }
+
+        # 運行 AI graph
+        result = await agent_app.ainvoke(initial_state)
+
+        # 獲取 AI 回應
+        ai_response = result["messages"][-1]["content"]
+        print(f"AI response generated: {ai_response[:50]}...")
+
+    except Exception as e:
+        print(f"Error using AI graph: {e}")
+        # 如果 AI 失敗，使用簡單回應
+        ai_response = "收到您的訊息！我正在處理中。"
 
     # 儲存對話到資料庫
     try:

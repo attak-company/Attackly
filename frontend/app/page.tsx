@@ -2073,4 +2073,3 @@ export default function LandingPage() {
   );
 
 }
-
