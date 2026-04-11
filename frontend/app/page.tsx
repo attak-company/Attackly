@@ -8,7 +8,7 @@ import { motion, AnimatePresence } from "framer-motion";
 
 import Link from "next/link";
 
-import { Bot, Calendar, MessageSquare, Shield, Zap, ArrowRight, CheckCircle2, Star, Globe, Clock, LayoutDashboard, X, Check } from "lucide-react";
+import { Bot, Calendar, MessageSquare, Shield, ShieldCheck, Zap, ArrowRight, CheckCircle2, Star, Globe, Clock, LayoutDashboard, X, Check, Key, Settings } from "lucide-react";
 
 
 
@@ -145,6 +145,15 @@ export default function LandingPage() {
   const [isScrolled, setIsScrolled] = useState(false);
 
   const [selectedIndustry, setSelectedIndustry] = useState('餐飲服務');
+
+  const [activeStep, setActiveStep] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setActiveStep((prev) => (prev + 1) % 3);
+    }, 3000);
+    return () => clearInterval(interval);
+  }, []);
 
 
 
@@ -1105,7 +1114,7 @@ export default function LandingPage() {
                   </div>
 
                   {/* 聊天區域 */}
-                  <div className="h-96 overflow-y-auto p-4 space-y-4 bg-gray-50">
+                  <div key={selectedIndustry} className="h-96 overflow-y-auto overflow-x-hidden p-4 space-y-4 bg-gray-50 scrollbar-hide">
                     {/* 功能點列表 */}
                     <div className="pb-4 border-b border-gray-200 flex gap-2 flex-wrap">
                       {industries[selectedIndustry].features.map((feature, idx) => (
@@ -1113,7 +1122,7 @@ export default function LandingPage() {
                           key={idx}
                           initial={{ opacity: 0, x: -20 }}
                           animate={{ opacity: 1, x: 0 }}
-                          transition={{ delay: 0.5 + idx * 0.1 }}
+                          transition={{ delay: 0.5 + idx * (feature.length * 0.05 + 0.2) }}
                           className="flex items-center gap-2"
                         >
                           <div className="w-5 h-5 bg-red-600 rounded-full flex items-center justify-center flex-shrink-0">
@@ -1125,24 +1134,38 @@ export default function LandingPage() {
                     </div>
 
                     <AnimatePresence mode="wait">
-                      {industries[selectedIndustry].chatMessages.map((msg, idx) => (
-                        <motion.div
-                          key={idx}
-                          initial={{ opacity: 0, x: msg.type === 'user' ? 20 : -20 }}
-                          animate={{ opacity: 1, x: 0 }}
-                          exit={{ opacity: 0, x: msg.type === 'user' ? -20 : 20 }}
-                          transition={{ duration: 0.3, delay: idx * 0.1 }}
-                          className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}
-                        >
-                          <div className={`max-w-[80%] p-3 rounded-2xl ${
-                            msg.type === 'user'
-                              ? 'bg-black text-white rounded-br-sm'
-                              : 'bg-white text-gray-800 border border-gray-200 rounded-bl-sm'
-                          }`}>
-                            <p className="text-sm leading-relaxed"><TypewriterText key={`${selectedIndustry}-${idx}`} text={msg.text} speed={0.05} /></p>
-                          </div>
-                        </motion.div>
-                      ))}
+                      {industries[selectedIndustry].chatMessages.map((msg, idx) => {
+                        // 計算功能點標籤的總時間
+                        const featuresTotalTime = industries[selectedIndustry].features.reduce((acc, feature, fIdx) => {
+                          return acc + (fIdx === 0 ? 0.5 : 0) + feature.length * 0.05 + 0.2;
+                        }, 0);
+
+                        // 計算之前訊息的總時間
+                        const previousMessagesTime = industries[selectedIndustry].chatMessages.slice(0, idx).reduce((acc, prevMsg) => {
+                          return acc + prevMsg.text.length * 0.05 + 0.3;
+                        }, 0);
+
+                        const totalDelay = featuresTotalTime + previousMessagesTime;
+
+                        return (
+                          <motion.div
+                            key={idx}
+                            initial={{ opacity: 0, x: msg.type === 'user' ? 20 : -20 }}
+                            animate={{ opacity: 1, x: 0 }}
+                            exit={{ opacity: 0, x: msg.type === 'user' ? -20 : 20 }}
+                            transition={{ duration: 0.3, delay: totalDelay }}
+                            className={`flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'}`}
+                          >
+                            <div className={`max-w-[80%] p-3 rounded-2xl ${
+                              msg.type === 'user'
+                                ? 'bg-black text-white rounded-br-sm'
+                                : 'bg-white text-gray-800 border border-gray-200 rounded-bl-sm'
+                            }`}>
+                              <p className="text-sm leading-relaxed"><TypewriterText key={`${selectedIndustry}-${idx}`} text={msg.text} speed={0.05} /></p>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
                     </AnimatePresence>
                   </div>
 
@@ -1242,33 +1265,318 @@ export default function LandingPage() {
 
 
 
-      {/* 價格方案 */}
+      {/* 分隔線 */}
+      <div className="max-w-7xl mx-auto px-6">
+        <div className="border-b-4 border-gray-500/50"></div>
+      </div>
 
-      <section id="pricing" className="py-32 px-6">
+
+
+      {/* 設定預覽區塊 */}
+      <section className="py-24 px-6 bg-[#050505]">
+        <div className="max-w-7xl mx-auto">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl md:text-5xl font-black mb-6 text-white leading-relaxed">只需三步，喚醒您的專屬店長</h2>
+            <p className="text-lg md:text-xl text-gray-400 leading-relaxed max-w-3xl mx-auto">
+              我們將複雜的技術藏在後台。您只需完成簡單設定，即可擁有一位懂生意、有溫度的 AI 夥伴。
+            </p>
+          </div>
+
+          {/* 三步驟橫向流程 */}
+          <div className="relative">
+            {/* 紅色連線線條 - 帶流動的呼吸燈效果 */}
+            <div className="absolute top-1/2 left-0 right-0 h-1 bg-gradient-to-r from-transparent via-red-500 to-transparent opacity-50 transform -translate-y-1/2 hidden md:block">
+              <motion.div
+                animate={{
+                  left: activeStep === 0 ? '0%' : activeStep === 1 ? '33%' : '66%',
+                  width: activeStep === 0 ? '33%' : activeStep === 1 ? '33%' : '33%',
+                  opacity: [0.2, 1, 0.2],
+                }}
+                transition={{
+                  duration: 3,
+                  repeat: Infinity,
+                  ease: [0.4, 0, 0.2, 1],
+                }}
+                className="absolute top-0 h-full bg-gradient-to-r from-transparent via-red-400 to-transparent"
+              />
+            </div>
+
+            <div className="grid md:grid-cols-3 gap-8 relative z-10">
+              {/* Step 01 */}
+              <motion.div
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.6 }}
+                whileHover={{ scale: 1.05, borderColor: 'rgba(255, 0, 0, 1)' }}
+                className="bg-[#0A0A0A] border border-white/10 p-8 rounded-2xl hover:shadow-[0_0_40px_rgba(255,0,0,0.2)] transition-all duration-300 relative overflow-hidden"
+              >
+                {activeStep === 0 && (
+                  <motion.div
+                    animate={{
+                      boxShadow: [
+                        "inset 0 0 15px rgba(255, 0, 0, 0.05)",
+                        "inset 0 0 50px rgba(255, 0, 0, 0.25)",
+                        "inset 0 0 15px rgba(255, 0, 0, 0.05)",
+                      ],
+                    }}
+                    transition={{
+                      duration: 3,
+                      repeat: Infinity,
+                      ease: [0.4, 0, 0.2, 1],
+                    }}
+                    className="absolute inset-0 pointer-events-none"
+                  />
+                )}
+                <div className="flex items-center gap-3 mb-4">
+                  <motion.div
+                    animate={{
+                      color: activeStep === 0 ? 'rgb(239, 68, 68)' : 'rgb(220, 38, 38)',
+                      scale: activeStep === 0 ? 1.1 : 1,
+                    }}
+                    transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+                  >
+                    <Key className="w-8 h-8" />
+                  </motion.div>
+                  <motion.div
+                    animate={{
+                      color: activeStep === 0 ? 'rgb(239, 68, 68)' : 'rgb(220, 38, 38)',
+                      scale: activeStep === 0 ? 1.1 : 1,
+                    }}
+                    transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+                    className="text-5xl font-black"
+                  >
+                    01
+                  </motion.div>
+                </div>
+                <h3 className="text-xl font-bold text-white mb-3">貼入 LINE「專屬密鑰」</h3>
+                <p className="text-sm text-gray-400 leading-relaxed mb-4">
+                  簡單貼上連線代碼，讓您的 LINE 官方帳號瞬間具備智慧核心。
+                </p>
+                <p className="text-xs text-gray-500">別擔心，我們備有 1 分鐘新手引導，保證一看就會。</p>
+              </motion.div>
+
+              {/* Step 02 - 帶紅色呼吸燈特效 */}
+              <motion.div
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.6, delay: 0.2 }}
+                whileHover={{ scale: 1.05, borderColor: 'rgba(255, 0, 0, 1)' }}
+                className="bg-[#0A0A0A] border border-white/10 p-8 rounded-2xl hover:shadow-[0_0_40px_rgba(255,0,0,0.2)] transition-all duration-300 relative overflow-hidden"
+              >
+                {activeStep === 1 && (
+                  <motion.div
+                    animate={{
+                      boxShadow: [
+                        "inset 0 0 15px rgba(255, 0, 0, 0.05)",
+                        "inset 0 0 50px rgba(255, 0, 0, 0.25)",
+                        "inset 0 0 15px rgba(255, 0, 0, 0.05)",
+                      ],
+                    }}
+                    transition={{
+                      duration: 3,
+                      repeat: Infinity,
+                      ease: [0.4, 0, 0.2, 1],
+                    }}
+                    className="absolute inset-0 pointer-events-none"
+                  />
+                )}
+                <div className="flex items-center gap-3 mb-4">
+                  <motion.div
+                    animate={{
+                      color: activeStep === 1 ? 'rgb(239, 68, 68)' : 'rgb(220, 38, 38)',
+                      scale: activeStep === 1 ? 1.1 : 1,
+                    }}
+                    transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+                  >
+                    <Settings className="w-8 h-8" />
+                  </motion.div>
+                  <motion.div
+                    animate={{
+                      color: activeStep === 1 ? 'rgb(239, 68, 68)' : 'rgb(220, 38, 38)',
+                      scale: activeStep === 1 ? 1.1 : 1,
+                    }}
+                    transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+                    className="text-5xl font-black"
+                  >
+                    02
+                  </motion.div>
+                </div>
+                <h3 className="text-xl font-bold text-white mb-3">AI 模型設置（注入靈魂）</h3>
+                <p className="text-sm text-gray-400 leading-relaxed mb-4">
+                  輸入店家基本資料（如價目表、店內規章），並設定 AI 的服務語氣（如：親切、專業或幽默）。
+                </p>
+                <p className="text-xs text-gray-500">這是店長的養成過程，讓他成為最懂您店面的人。</p>
+              </motion.div>
+
+              {/* Step 03 */}
+              <motion.div
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.6, delay: 0.4 }}
+                whileHover={{ scale: 1.05, borderColor: 'rgba(255, 0, 0, 1)' }}
+                className="bg-[#0A0A0A] border border-white/10 p-8 rounded-2xl hover:shadow-[0_0_40px_rgba(255,0,0,0.2)] transition-all duration-300 relative overflow-hidden"
+              >
+                {activeStep === 2 && (
+                  <motion.div
+                    animate={{
+                      boxShadow: [
+                        "inset 0 0 15px rgba(255, 0, 0, 0.05)",
+                        "inset 0 0 50px rgba(255, 0, 0, 0.25)",
+                        "inset 0 0 15px rgba(255, 0, 0, 0.05)",
+                      ],
+                    }}
+                    transition={{
+                      duration: 3,
+                      repeat: Infinity,
+                      ease: [0.4, 0, 0.2, 1],
+                    }}
+                    className="absolute inset-0 pointer-events-none"
+                  />
+                )}
+                <div className="flex items-center gap-3 mb-4">
+                  <motion.div
+                    animate={{
+                      color: activeStep === 2 ? 'rgb(239, 68, 68)' : 'rgb(220, 38, 38)',
+                      scale: activeStep === 2 ? 1.1 : 1,
+                    }}
+                    transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+                  >
+                    <Zap className="w-8 h-8" />
+                  </motion.div>
+                  <motion.div
+                    animate={{
+                      color: activeStep === 2 ? 'rgb(239, 68, 68)' : 'rgb(220, 38, 38)',
+                      scale: activeStep === 2 ? 1.1 : 1,
+                    }}
+                    transition={{ duration: 0.5, ease: [0.4, 0, 0.2, 1] }}
+                    className="text-5xl font-black"
+                  >
+                    03
+                  </motion.div>
+                </div>
+                <h3 className="text-xl font-bold text-white mb-3">店長正式上線</h3>
+                <p className="text-sm text-gray-400 leading-relaxed mb-4">
+                  點擊啟動，AI 數位店長便開始 24H 守護您的諮詢與預約。
+                </p>
+                <p className="text-xs text-gray-500">現在，您可以放心把瑣事交給他，專心服務眼前的客人。</p>
+              </motion.div>
+            </div>
+          </div>
+
+          {/* 垂直連接線 - 從第二步驟到系統狀態 */}
+          <div className="relative mt-0 hidden md:block" style={{ height: '48px' }}>
+            <div className="absolute left-1/2 top-0 bottom-0 w-1 bg-gradient-to-b from-transparent via-red-500 to-transparent opacity-50 transform -translate-x-1/2">
+              <motion.div
+                animate={{
+                  top: activeStep === 1 ? '0%' : '50%',
+                  height: activeStep === 1 ? '100%' : '0%',
+                  opacity: [0.2, 1, 0.2],
+                }}
+                transition={{
+                  duration: 3,
+                  repeat: Infinity,
+                  ease: [0.4, 0, 0.2, 1],
+                }}
+                className="absolute left-0 right-0 bg-gradient-to-b from-transparent via-red-400 to-transparent"
+              />
+            </div>
+          </div>
+
+          {/* 手機預覽畫面 */}
+          <div className="mt-0 flex justify-center relative">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9 }}
+              whileInView={{ opacity: 1, scale: 1 }}
+              viewport={{ once: true }}
+              transition={{ duration: 0.6, delay: 0.6 }}
+              className="bg-[#0A0A0A] rounded-3xl p-6 max-w-sm w-full border-2 border-white/10 relative overflow-hidden"
+            >
+              {activeStep === 1 && (
+                <motion.div
+                  animate={{
+                    boxShadow: [
+                      "inset 0 0 15px rgba(255, 0, 0, 0.05)",
+                      "inset 0 0 50px rgba(255, 0, 0, 0.25)",
+                      "inset 0 0 15px rgba(255, 0, 0, 0.05)",
+                    ],
+                  }}
+                  transition={{
+                    duration: 3,
+                    repeat: Infinity,
+                    ease: [0.4, 0, 0.2, 1],
+                  }}
+                  className="absolute inset-0 pointer-events-none"
+                />
+              )}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-2">
+                  <motion.div
+                    animate={{
+                      scale: [1, 1.2, 1],
+                      opacity: [1, 0.7, 1],
+                    }}
+                    transition={{
+                      duration: 1.5,
+                      repeat: Infinity,
+                      ease: "easeInOut",
+                    }}
+                    className="w-3 h-3 bg-green-500 rounded-full"
+                  />
+                  <span className="text-white font-bold text-sm">系統狀態</span>
+                </div>
+                <span className="text-green-500 font-bold text-sm">運行中</span>
+              </div>
+              <div className="bg-black rounded-xl p-4">
+                <div className="space-y-2">
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                    <span className="text-gray-400 text-xs">LINE 連線：正常</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                    <span className="text-gray-400 text-xs">AI 引擎：運作中</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                    <span className="text-gray-400 text-xs">訊息處理：即時</span>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        </div>
+      </section>
+
+
+
+      {/* 價格方案 - 白色版本 */}
+
+      <section id="pricing" className="py-32 px-6 bg-white">
 
         <div className="max-w-7xl mx-auto">
 
           <div className="text-center mb-20">
 
-            <h2 className="text-4xl md:text-6xl font-black mb-6">簡單透明的方案</h2>
+            <h2 className="text-4xl md:text-6xl font-black mb-6 text-gray-900">選擇最適合您的經營方案</h2>
 
-            <p className="text-xl text-gray-500 font-medium">無隱藏費用，隨時可取消。</p>
+            <p className="text-xl text-gray-500 font-medium">先試用，再決定。我們與您一同成長。</p>
 
           </div>
 
-
-
           <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
 
-            {/* 標準版 */}
+            {/* 基礎啟航版 (Free) */}
 
-            <div className="p-10 bg-white border-2 border-gray-100 rounded-[32px] hover:border-black transition-all group">
+            <div className="p-10 bg-white border-2 border-gray-200 rounded-[32px] hover:border-gray-300 transition-all group">
 
-              <h4 className="text-xl font-bold mb-2">基礎版</h4>
+              <h4 className="text-xl font-bold mb-2 text-gray-900">基礎啟航版 (Basic)</h4>
 
               <div className="flex items-baseline gap-1 mb-8">
 
-                <span className="text-5xl font-black">$990</span>
+                <span className="text-5xl font-black text-gray-900">$0</span>
 
                 <span className="text-gray-500 font-bold">/月</span>
 
@@ -1276,7 +1584,7 @@ export default function LandingPage() {
 
               <ul className="space-y-4 mb-10">
 
-                {["每月 500 次 AI 回覆", "自動預約系統", "基礎 FAQ 知識庫", "LINE 整合", "單一商戶後台"].map((item, i) => (
+                {["基礎 AI 自動回覆", "LINE 密鑰對接", "標準語氣設置"].map((item, i) => (
 
                   <li key={i} className="flex items-center gap-3 font-bold text-gray-600">
 
@@ -1288,31 +1596,57 @@ export default function LandingPage() {
 
               </ul>
 
-              <Link href="/register" className="block w-full py-4 bg-gray-50 text-black text-center rounded-2xl font-black group-hover:bg-black group-hover:text-white hover:border-red-600 hover:-translate-y-1 hover:shadow-[0_10px_30px_-10px_rgba(255,0,0,0.3)] transition-all border-2 border-transparent">
+              <Link href="/register" className="block w-full py-4 bg-white text-gray-900 text-center rounded-2xl font-black border-2 border-gray-300 hover:border-gray-900 hover:-translate-y-1 transition-all">
 
                 立即開始
 
               </Link>
 
+              <p className="text-sm text-gray-400 mt-4 text-center">註冊帳號即可永久使用。</p>
+
             </div>
 
+            {/* 專業經營版 (Pro) */}
 
+            <motion.div
 
-            {/* 專業版 */}
+              className="p-10 bg-[#0A0A0A] text-white rounded-[32px] relative overflow-hidden border-2 border-red-500/30 shadow-[0_0_20px_rgba(255,0,0,0.2)]"
 
-            <div className="p-10 bg-black text-white rounded-[32px] relative overflow-hidden shadow-2xl shadow-black/20">
+              whileHover={{
 
-              <div className="absolute top-6 right-6 bg-white/20 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-tighter">
+                boxShadow: "0 0 40px rgba(255, 0, 0, 0.4)",
 
-                最受歡迎
+                y: -8,
+
+              }}
+
+              transition={{
+
+                duration: 0.3,
+
+                ease: [0.4, 0, 0.2, 1],
+
+              }}
+
+            >
+
+              <div className="absolute top-6 right-6 bg-red-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-tighter">
+
+                HOT
 
               </div>
 
-              <h4 className="text-xl font-bold mb-2 text-gray-400">專業版</h4>
+              <div className="absolute top-6 left-6 bg-black border-2 border-red-500 text-red-500 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-tighter">
+
+                早鳥支持價
+
+              </div>
+
+              <h4 className="text-xl font-bold mb-2 text-white mt-8">專業經營版 (Pro)</h4>
 
               <div className="flex items-baseline gap-1 mb-8">
 
-                <span className="text-5xl font-black text-white">$1,990</span>
+                <span className="text-5xl font-black text-red-500">NT$ 799</span>
 
                 <span className="text-gray-400 font-bold">/月</span>
 
@@ -1320,11 +1654,11 @@ export default function LandingPage() {
 
               <ul className="space-y-4 mb-10">
 
-                {["無限次 AI 回覆", "自動預約 + 日程分析", "高級 RAG 知識庫 (支援PDF)", "多渠道串接", "詳細數據統計報表"].map((item, i) => (
+                {["Gemini 1.5 Pro 完整大腦", "視覺化經營看板", "高級自定義語氣", "優先客服支援"].map((item, i) => (
 
-                  <li key={i} className="flex items-center gap-3 font-bold">
+                  <li key={i} className="flex items-center gap-3 font-bold text-gray-200">
 
-                    <CheckCircle2 className="w-5 h-5 text-green-400" /> {item}
+                    <CheckCircle2 className="w-5 h-5 text-red-400" /> {item}
 
                   </li>
 
@@ -1332,13 +1666,41 @@ export default function LandingPage() {
 
               </ul>
 
-              <Link href="/register" className="block w-full py-4 bg-white text-black text-center rounded-2xl font-black hover:bg-gray-100 hover:border-red-600 hover:-translate-y-1 hover:shadow-[0_10px_30px_-10px_rgba(255,0,0,0.3)] transition-all border-2 border-transparent">
+              <Link href="/register" className="block w-full py-4 bg-red-500 text-white text-center rounded-2xl font-black hover:bg-red-600 hover:-translate-y-1 transition-all">
 
-                獲取專業版
+                開始 7 天免費試用
 
               </Link>
 
-            </div>
+              <p className="text-sm text-gray-400 mt-4 text-center">每天不到 30 元，換取一位 24 小時在線的 AI 店長。</p>
+
+              <div className="flex items-center justify-center gap-2 mt-3">
+
+                <ShieldCheck className="w-4 h-4 text-red-500" />
+
+                <span className="text-sm font-bold text-red-500">首創 7 天無條件退費保證</span>
+
+              </div>
+
+            </motion.div>
+
+          </div>
+
+          {/* 信任標章 */}
+
+          <div className="flex justify-center gap-8 mt-16">
+
+            {["隨時取消訂閱", "安全加密支付", "7 天滿意保證"].map((item, i) => (
+
+              <div key={i} className="flex items-center gap-2 text-gray-500 font-medium">
+
+                <CheckCircle2 className="w-5 h-5 text-gray-400" />
+
+                <span className="text-sm">{item}</span>
+
+              </div>
+
+            ))}
 
           </div>
 
