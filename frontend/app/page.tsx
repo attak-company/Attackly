@@ -311,8 +311,10 @@ export default function LandingPage() {
 
 
   const [isPricingSectionInView, setIsPricingSectionInView] = useState(false);
-
-
+  const [isBasicCardAnimated, setIsBasicCardAnimated] = useState(false);
+  const [isProCardAnimated, setIsProCardAnimated] = useState(false);
+  const [isBasicListAnimated, setIsBasicListAnimated] = useState(false);
+  const [isProListAnimated, setIsProListAnimated] = useState(false);
 
   const pricingSectionRef = useRef<HTMLElement>(null);
 
@@ -372,7 +374,12 @@ export default function LandingPage() {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
             setIsPricingSectionInView(true);
-            observer.unobserve(entry.target);
+          } else {
+            setIsPricingSectionInView(false);
+            setIsBasicCardAnimated(false);
+            setIsProCardAnimated(false);
+            setIsBasicListAnimated(false);
+            setIsProListAnimated(false);
           }
         });
       },
@@ -3674,17 +3681,21 @@ export default function LandingPage() {
 
             {/* 基礎啟航版 (Free) */}
 
-
-
             <motion.div
               initial={{ opacity: 0, y: 40 }}
               animate={isPricingSectionInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 40 }}
-              transition={{ duration: 0.6, delay: 0, ease: [0.4, 0, 0.2, 1] }}
-              className="p-10 bg-[#FAFAFA] border-2 border-gray-200 rounded-[32px] hover:border-gray-300 transition-all group"
+              transition={{ duration: 0.6, ease: [0.4, 0, 0.2, 1] }}
+              onAnimationComplete={() => {
+                setIsBasicCardAnimated(true);
+                setTimeout(() => setIsBasicListAnimated(true), 100);
+              }}
+              className="w-full"
             >
+              <div className="p-10 bg-[#FAFAFA] border-2 border-gray-200 rounded-[32px] hover:border-gray-300 transition-all flex flex-col justify-between">
 
 
 
+              <div>
               <h4 className="text-xl font-bold mb-2 text-gray-900">基礎啟航版 (Basic)</h4>
 
 
@@ -3713,13 +3724,18 @@ export default function LandingPage() {
 
 
 
-                  <li className="flex items-center gap-3 font-bold text-gray-600">
+                  <motion.li
+                    key={i}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={isBasicListAnimated ? { opacity: 1, x: 0 } : { opacity: 0, x: -20 }}
+                    transition={{ duration: 0.3, delay: i * 0.1, ease: [0.4, 0, 0.2, 1] }}
+                    className="flex items-center gap-3 font-bold text-gray-600"
+                  >
 
                     <svg
                       className="w-5 h-5"
                       viewBox="0 0 100 100"
                       style={{
-                        mixBlendMode: 'screen',
                         filter: 'drop-shadow(0 0 8px rgba(0, 0, 0, 0.6))'
                       }}
                     >
@@ -3737,7 +3753,7 @@ export default function LandingPage() {
                     </svg>
                     {item}
 
-                  </li>
+                  </motion.li>
 
 
 
@@ -3763,47 +3779,39 @@ export default function LandingPage() {
 
               <p className="text-sm text-gray-400 mt-4 text-center">註冊帳號即可永久使用。</p>
 
+              </div>
+              </div>
             </motion.div>
 
 
 
             {/* 專業經營版 (Pro) */}
 
-
-
             <motion.div
               initial={{ opacity: 0, y: 40 }}
-              animate={isPricingSectionInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 40 }}
-              transition={{ duration: 0.6, delay: 0.3, ease: [0.4, 0, 0.2, 1] }}
-              className="p-10 bg-[#0A0A0A] text-white rounded-[32px] relative overflow-hidden border-2 border-red-500/30 shadow-[0_0_20px_rgba(255,0,0,0.2)] animate-[neon-pulse_3s_ease-in-out_infinite]"
-
-
-
-              whileHover={{
-
-
-
-                boxShadow: "0 0 40px rgba(255, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.5)",
-
-
-
-                y: -10,
-
-
-
+              animate={isBasicCardAnimated ? { opacity: 1, y: 0 } : { opacity: 0, y: 40 }}
+              transition={{ duration: 0.6, ease: [0.4, 0, 0.2, 1] }}
+              onAnimationComplete={() => {
+                setIsProCardAnimated(true);
+                setTimeout(() => setIsProListAnimated(true), 100);
               }}
-
-
-
-              transition={{
-
-                duration: 0.3,
-
-                ease: [0.4, 0, 0.2, 1],
-
-              }}
-
+              className="w-full"
             >
+              <div className="p-10 bg-[#0A0A0A] text-white rounded-[32px] relative border-[1px] border-red-500/50 shadow-[0_0_25px_rgba(255,0,0,0.7)] animate-[neon-pulse_3s_ease-in-out_infinite] group">
+              <motion.div
+                className="animate-[floating-card_3s_ease-in-out_infinite]"
+
+                whileHover={{
+                  y: -10,
+                  boxShadow: "0 0 40px rgba(255, 0, 0, 0.4), 8px 8px 20px rgba(0, 0, 0, 0.5)",
+                }}
+
+                transition={{
+                  duration: 0.3,
+                  ease: [0.4, 0, 0.2, 1],
+                }}
+
+              >
 
 
 
@@ -3831,7 +3839,7 @@ export default function LandingPage() {
 
 
 
-              <h4 className="text-xl font-bold mb-2 text-white mt-8">專業經營版 (Pro)</h4>
+              <h4 className="text-xl font-bold mb-2 text-white">專業經營版 (Pro)</h4>
 
 
 
@@ -3861,9 +3869,9 @@ export default function LandingPage() {
 
                   <motion.li
                     key={i}
-                    initial={{ opacity: 0, scale: 0 }}
-                    animate={isPricingSectionInView ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0 }}
-                    transition={{ duration: 0.4, delay: 1.1 + i * 0.15, ease: [0.4, 0, 0.2, 1] }}
+                    initial={{ opacity: 0, x: -20 }}
+                    animate={isProListAnimated ? { opacity: 1, x: 0 } : { opacity: 0, x: -20 }}
+                    transition={{ duration: 0.3, delay: i * 0.1, ease: [0.4, 0, 0.2, 1] }}
                     className="flex items-center gap-3 font-bold text-gray-200"
                   >
 
@@ -3931,8 +3939,8 @@ export default function LandingPage() {
 
               </div>
 
-
-
+              </motion.div>
+              </div>
             </motion.div>
 
 

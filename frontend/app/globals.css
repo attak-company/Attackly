@@ -238,17 +238,37 @@ main {
 
 
 
+@keyframes floating-card {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes neon-floating {
+  0%, 100% {
+    transform: translateY(0px);
+    box-shadow: 0 0 15px rgba(255, 0, 0, 0.3), 0 0 25px rgba(255, 0, 0, 0.2);
+  }
+  50% {
+    transform: translateY(-5px);
+    box-shadow: 0 0 25px rgba(255, 0, 0, 0.7), 0 0 40px rgba(255, 0, 0, 0.5);
+  }
+}
+
 @keyframes neon-pulse {
 
   0%, 100% {
 
-    box-shadow: 0 0 20px rgba(255, 0, 0, 0.2), 0 0 40px rgba(255, 0, 0, 0.1);
+    box-shadow: 0 0 15px rgba(255, 0, 0, 0.3), 0 0 25px rgba(255, 0, 0, 0.2);
 
   }
 
   50% {
 
-    box-shadow: 0 0 30px rgba(255, 0, 0, 0.4), 0 0 60px rgba(255, 0, 0, 0.2);
+    box-shadow: 0 0 25px rgba(255, 0, 0, 0.7), 0 0 40px rgba(255, 0, 0, 0.5);
 
   }
 
