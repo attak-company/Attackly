@@ -49,6 +49,7 @@ body {
   font-family: Arial, Helvetica, sans-serif;
 
   overflow-x: hidden;
+  scrollbar-gutter: stable;
 
 }
 
@@ -238,26 +239,6 @@ main {
 
 
 
-@keyframes floating-card {
-  0%, 100% {
-    transform: translateY(0px);
-  }
-  50% {
-    transform: translateY(-5px);
-  }
-}
-
-@keyframes neon-floating {
-  0%, 100% {
-    transform: translateY(0px);
-    box-shadow: 0 0 15px rgba(255, 0, 0, 0.3), 0 0 25px rgba(255, 0, 0, 0.2);
-  }
-  50% {
-    transform: translateY(-5px);
-    box-shadow: 0 0 25px rgba(255, 0, 0, 0.7), 0 0 40px rgba(255, 0, 0, 0.5);
-  }
-}
-
 @keyframes neon-pulse {
 
   0%, 100% {
@@ -272,4 +253,33 @@ main {
 
   }
 
+}
+
+@keyframes float-vertical {
+  0%, 100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -5px, 0);
+  }
+}
+
+@keyframes badge-pulse {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow: 0 0 5px 0 rgba(255, 0, 0, 0.7);
+  }
+  50% {
+    transform: scale(1.15);
+    box-shadow: 0 0 20px 8px rgba(255, 0, 0, 0.5);
+  }
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }

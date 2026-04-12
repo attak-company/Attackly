@@ -18,7 +18,7 @@ import Link from "next/link";
 
 
 
-import { Bot, Calendar, MessageSquare, Shield, ShieldCheck, Zap, ArrowRight, CheckCircle2, Star, Globe, Clock, LayoutDashboard, X, Check, Key, Settings, Mail } from "lucide-react";
+import { Bot, Calendar, MessageSquare, Shield, ShieldCheck, Zap, ArrowRight, CheckCircle2, Star, Globe, Clock, LayoutDashboard, X, Check, Key, Settings, Mail, Play, Pause, RotateCcw, RotateCw, BookOpen, Code, HelpCircle, FileText, Activity } from "lucide-react";
 
 
 
@@ -311,6 +311,22 @@ export default function LandingPage() {
   const [isBasicListAnimated, setIsBasicListAnimated] = useState(false);
   const [isProListAnimated, setIsProListAnimated] = useState(false);
 
+  const [showVideoModal, setShowVideoModal] = useState(false);
+
+  const [showQuickStartModal, setShowQuickStartModal] = useState(false);
+
+  const [quickStartStep, setQuickStartStep] = useState(0);
+
+  const [showHelpCenterModal, setShowHelpCenterModal] = useState(false);
+
+  const [showFaqDropdown, setShowFaqDropdown] = useState(false);
+
+  const [expandedFaqCategory, setExpandedFaqCategory] = useState<string | null>(null);
+
+  const [expandedDropdownQuestion, setExpandedDropdownQuestion] = useState<string | null>(null);
+
+  const faqDropdownRef = useRef<HTMLDivElement>(null);
+
   const pricingSectionRef = useRef<HTMLElement>(null);
 
 
@@ -362,6 +378,73 @@ export default function LandingPage() {
 
 
 
+  // Click outside to close for FAQ Dropdown
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (faqDropdownRef.current && !faqDropdownRef.current.contains(event.target as Node)) {
+        setShowFaqDropdown(false);
+      }
+    };
+
+    if (showFaqDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => {
+        document.removeEventListener('mousedown', handleClickOutside);
+      };
+    }
+  }, [showFaqDropdown]);
+
+  // Scroll lock and ESC key for Help Center Modal
+  useEffect(() => {
+    if (showHelpCenterModal) {
+      document.body.style.overflow = 'hidden';
+      const handleEsc = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          setShowHelpCenterModal(false);
+        }
+      };
+      window.addEventListener('keydown', handleEsc);
+      return () => {
+        document.body.style.overflow = 'unset';
+        window.removeEventListener('keydown', handleEsc);
+      };
+    }
+  }, [showHelpCenterModal]);
+
+  // Scroll lock and ESC key for Video Modal
+  useEffect(() => {
+    if (showVideoModal) {
+      document.body.style.overflow = 'hidden';
+      const handleEsc = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          setShowVideoModal(false);
+        }
+      };
+      window.addEventListener('keydown', handleEsc);
+      return () => {
+        document.body.style.overflow = 'unset';
+        window.removeEventListener('keydown', handleEsc);
+      };
+    }
+  }, [showVideoModal]);
+
+  // Scroll lock and ESC key for Quick Start Modal
+  useEffect(() => {
+    if (showQuickStartModal) {
+      document.body.style.overflow = 'hidden';
+      const handleEsc = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') {
+          setShowQuickStartModal(false);
+        }
+      };
+      window.addEventListener('keydown', handleEsc);
+      return () => {
+        document.body.style.overflow = 'unset';
+        window.removeEventListener('keydown', handleEsc);
+      };
+    }
+  }, [showQuickStartModal]);
+
   // Intersection Observer for Pricing Section
   useEffect(() => {
     const observer = new IntersectionObserver(
@@ -369,12 +452,7 @@ export default function LandingPage() {
         entries.forEach((entry) => {
           if (entry.isIntersecting) {
             setIsPricingSectionInView(true);
-          } else {
-            setIsPricingSectionInView(false);
-            setIsBasicCardAnimated(false);
-            setIsProCardAnimated(false);
-            setIsBasicListAnimated(false);
-            setIsProListAnimated(false);
+            observer.unobserve(entry.target);
           }
         });
       },
@@ -391,6 +469,23 @@ export default function LandingPage() {
       }
     };
   }, []);
+
+  // Manual animation sequencing
+  useEffect(() => {
+    if (isPricingSectionInView) {
+      // Start basic card animation
+      setTimeout(() => {
+        setIsBasicCardAnimated(true);
+        setIsBasicListAnimated(true);
+      }, 100);
+
+      // Start pro card animation after basic card completes
+      setTimeout(() => {
+        setIsProCardAnimated(true);
+        setIsProListAnimated(true);
+      }, 700); // 100ms delay + 600ms animation duration
+    }
+  }, [isPricingSectionInView]);
 
   const handleSparkEnter = () => {
     isHoveredRef.current = true;
@@ -3670,7 +3765,7 @@ export default function LandingPage() {
 
 
 
-          <div className="grid md:grid-cols-2 gap-8 max-w-5xl mx-auto">
+          <div className="flex flex-col md:flex-row gap-8 max-w-5xl mx-auto items-stretch">
 
 
 
@@ -3678,15 +3773,11 @@ export default function LandingPage() {
 
             <motion.div
               initial={{ opacity: 0, y: 40 }}
-              animate={isPricingSectionInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 40 }}
+              animate={isBasicCardAnimated ? { opacity: 1, y: 0 } : { opacity: 0, y: 40 }}
               transition={{ duration: 0.6, ease: [0.4, 0, 0.2, 1] }}
-              onAnimationComplete={() => {
-                setIsBasicCardAnimated(true);
-                setTimeout(() => setIsBasicListAnimated(true), 100);
-              }}
               className="w-full"
             >
-              <div className="p-10 bg-[#FAFAFA] border-2 border-gray-200 rounded-[32px] hover:border-gray-300 transition-all flex flex-col justify-between">
+              <div className="p-10 bg-[#FAFAFA] border-2 border-gray-200 rounded-[32px] hover:border-gray-300 transition-all flex flex-col justify-between h-full min-h-[600px]">
 
 
 
@@ -3723,7 +3814,7 @@ export default function LandingPage() {
                     key={i}
                     initial={{ opacity: 0, x: -20 }}
                     animate={isBasicListAnimated ? { opacity: 1, x: 0 } : { opacity: 0, x: -20 }}
-                    transition={{ duration: 0.3, delay: i * 0.1, ease: [0.4, 0, 0.2, 1] }}
+                    transition={{ duration: 0.3, delay: i * 0.2, ease: [0.4, 0, 0.2, 1] }}
                     className="flex items-center gap-3 font-bold text-gray-600"
                   >
 
@@ -3754,13 +3845,13 @@ export default function LandingPage() {
 
                 ))}
 
-
+                <li className="h-[90px] invisible"></li>
 
               </ul>
 
+              <div className="flex-1"></div>
 
-
-              <Link href="/register" className="block w-full py-4 bg-[#FAFAFA] text-gray-900 text-center rounded-2xl font-black border-2 border-gray-300 hover:border-gray-900 hover:-translate-y-1 transition-all">
+              <Link href="/register" className="block w-full py-4 bg-[#FAFAFA] text-gray-900 text-center rounded-2xl font-black border-2 border-gray-300 hover:border-red-500 hover:-translate-y-1 hover:shadow-[0_0_10px_rgba(255,0,0,0.5)] transition-all duration-300 mt-auto">
 
 
 
@@ -3770,9 +3861,9 @@ export default function LandingPage() {
 
               </Link>
 
-
-
-              <p className="text-sm text-gray-400 mt-4 text-center">註冊帳號即可永久使用。</p>
+              <div className="pb-8 mt-4">
+                <p className="text-sm text-gray-400 text-center">註冊帳號即可永久使用。</p>
+              </div>
 
               </div>
               </div>
@@ -3783,46 +3874,31 @@ export default function LandingPage() {
             {/* 專業經營版 (Pro) */}
 
             <motion.div
-              initial={{ opacity: 0, y: 40 }}
-              animate={isBasicCardAnimated ? { opacity: 1, y: 0 } : { opacity: 0, y: 40 }}
+              initial={{ opacity: 0, y: 40, visibility: 'hidden' }}
+              animate={isProCardAnimated ? { opacity: 1, y: 0, visibility: 'visible' } : { opacity: 0, y: 40, visibility: 'hidden' }}
               transition={{ duration: 0.6, ease: [0.4, 0, 0.2, 1] }}
-              onAnimationComplete={() => {
-                setIsProCardAnimated(true);
-                setTimeout(() => setIsProListAnimated(true), 100);
-              }}
               className="w-full"
             >
-              <div className="p-10 bg-[#0A0A0A] text-white rounded-[32px] relative border-[1px] border-red-500/50 shadow-[0_0_25px_rgba(255,0,0,0.7)] animate-[neon-pulse_3s_ease-in-out_infinite] group">
-              <motion.div
-                className="animate-[floating-card_3s_ease-in-out_infinite]"
+              <div className="animate-[neon-pulse_3s_ease-in-out_infinite] rounded-[32px] overflow-visible">
+                <div className="animate-[float-vertical_6s_cubic-bezier(0.445,0.05,0.55,0.95)_infinite]">
+                  <motion.div
+                    className="p-10 bg-[#0A0A0A] text-white rounded-[32px] relative border-[1px] border-red-500/50 shadow-[0_0_25px_rgba(255,0,0,0.7)] group flex flex-col justify-between h-full min-h-[600px] overflow-hidden z-10 contain-layout"
 
-                whileHover={{
-                  y: -10,
-                  boxShadow: "0 0 40px rgba(255, 0, 0, 0.4), 8px 8px 20px rgba(0, 0, 0, 0.5)",
-                }}
+                    whileHover={{
+                      y: -8,
+                      boxShadow: "0 0 40px rgba(255, 0, 0, 0.4), 15px 15px 30px rgba(0, 0, 0, 0.4)",
+                    }}
 
-                transition={{
-                  duration: 0.3,
-                  ease: [0.4, 0, 0.2, 1],
-                }}
+                    transition={{
+                      duration: 0.7,
+                      ease: [0.25, 0.46, 0.45, 0.94],
+                    }}
 
-              >
-
-
-
-              <div className="absolute top-6 right-6 bg-red-500 text-white text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-tighter">
+                  >
 
 
 
-                HOT
-
-
-
-              </div>
-
-
-
-              <div className="absolute top-6 left-6 bg-[#0A0A0A] border-2 border-red-500 text-red-500 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-tighter">
+              <div className="absolute top-6 right-6 bg-[#0A0A0A] border-2 border-red-500 text-red-500 text-[10px] font-black px-3 py-1 rounded-full uppercase tracking-tighter">
 
 
 
@@ -3834,7 +3910,9 @@ export default function LandingPage() {
 
 
 
-              <h4 className="text-xl font-bold mb-2 text-white">專業經營版 (Pro)</h4>
+              <div className="relative">
+                <h4 className="text-xl font-bold mb-2 text-white">專業經營版 (Pro)</h4>
+              </div>
 
 
 
@@ -3866,7 +3944,7 @@ export default function LandingPage() {
                     key={i}
                     initial={{ opacity: 0, x: -20 }}
                     animate={isProListAnimated ? { opacity: 1, x: 0 } : { opacity: 0, x: -20 }}
-                    transition={{ duration: 0.3, delay: i * 0.1, ease: [0.4, 0, 0.2, 1] }}
+                    transition={{ duration: 0.3, delay: i * 0.2, ease: [0.4, 0, 0.2, 1] }}
                     className="flex items-center gap-3 font-bold text-gray-200"
                   >
 
@@ -3902,9 +3980,9 @@ export default function LandingPage() {
 
               </ul>
 
+              <div className="flex-1"></div>
 
-
-              <Link href="/register" className="block w-full py-4 bg-red-500 text-white text-center rounded-2xl font-black hover:bg-[#FF0000] hover:-translate-y-1 transition-all">
+              <Link href="/register" className="block w-full py-4 bg-red-500 text-white text-center rounded-2xl font-black border-2 border-red-600 hover:bg-[#FF0000] hover:border-red-700 hover:-translate-y-1 transition-all mt-auto">
 
 
 
@@ -3914,27 +3992,16 @@ export default function LandingPage() {
 
               </Link>
 
-
-
-              <p className="text-sm text-gray-400 mt-4 text-center">每天不到 30 元，換取一位 24 小時在線的 AI 店長。</p>
-
-
-
-              <div className="flex items-center justify-center gap-2 mt-3">
-
-
-
-                <ShieldCheck className="w-4 h-4 text-red-500" />
-
-
-
-                <span className="text-sm font-bold text-red-500">首創 7 天無條件退費保證</span>
-
-
-
+              <div className="pb-8 mt-4">
+                <p className="text-sm text-gray-400 text-center mb-2">每天不到 30 元，換取一位 24 小時在線的 AI 店長。</p>
+                <div className="flex items-center justify-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-red-500" />
+                  <span className="text-sm font-bold text-red-500">首創 7 天無條件退費保證</span>
+                </div>
               </div>
 
               </motion.div>
+              </div>
               </div>
             </motion.div>
 
@@ -3996,7 +4063,7 @@ export default function LandingPage() {
 
 
 
-      <footer className="bg-[#0A0A0A] border-t border-white/5 pt-16 pb-8">
+      <footer className="bg-[#0A0A0A] border-t-2 border-red-500 pt-20 pb-8 shadow-[0_-4px_20px_rgba(255,0,0,0.3)]">
 
 
 
@@ -4080,7 +4147,7 @@ export default function LandingPage() {
 
 
 
-              <h4 className="text-white font-bold mb-4">產品服務</h4>
+              <h4 className="text-white font-bold mb-3">產品服務</h4>
 
 
 
@@ -4092,35 +4159,23 @@ export default function LandingPage() {
 
 
 
-                  <Link href="#features" className="text-gray-400 text-sm hover:text-white transition-colors">
+                  <button onClick={(e) => { e.preventDefault(); document.getElementById('features')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} className="text-gray-400 text-sm hover:text-red-500 transition-colors flex items-center gap-2 bg-transparent border-none cursor-pointer">
 
 
 
-                    核心功能
+                    <Zap className="w-4 h-4" />
 
 
 
-                  </Link>
+                    功能概覽
 
 
 
-                </li>
+                    <span className="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse shadow-[0_0_10px_rgba(255,0,0,0.8)]">Alpha_1.0</span>
 
 
 
-                <li>
-
-
-
-                  <Link href="#industry-scenarios" className="text-gray-400 text-sm hover:text-white transition-colors">
-
-
-
-                    行業應用
-
-
-
-                  </Link>
+                  </button>
 
 
 
@@ -4132,15 +4187,67 @@ export default function LandingPage() {
 
 
 
-                  <Link href="#pricing" className="text-gray-400 text-sm hover:text-white transition-colors">
+                  <button onClick={(e) => { e.preventDefault(); document.getElementById('solutions')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} className="text-gray-400 text-sm hover:text-red-500 transition-colors flex items-center gap-2 bg-transparent border-none cursor-pointer">
 
 
 
-                    價格方案
+                    <Globe className="w-4 h-4" />
 
 
 
-                  </Link>
+                    行業解決方案
+
+
+
+                  </button>
+
+
+
+                </li>
+
+
+
+                <li>
+
+
+
+                  <button onClick={(e) => { e.preventDefault(); document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} className="text-gray-400 text-sm hover:text-red-500 transition-colors flex items-center gap-2 bg-transparent border-none cursor-pointer">
+
+
+
+                    <Calendar className="w-4 h-4" />
+
+
+
+                    訂閱計劃
+
+
+
+                  </button>
+
+
+
+                </li>
+
+
+
+                <li>
+
+
+
+                  <button onClick={() => setShowVideoModal(true)} className="text-gray-400 text-sm hover:text-red-500 transition-colors flex items-center gap-2 bg-transparent border-none cursor-pointer">
+
+
+
+                    <Play className="w-4 h-4" />
+
+
+
+                    系統演示
+
+
+
+                  </button>
 
 
 
@@ -4168,7 +4275,7 @@ export default function LandingPage() {
 
 
 
-              <h4 className="text-white font-bold mb-4">技術支援</h4>
+              <h4 className="text-white font-bold mb-3">技術支援</h4>
 
 
 
@@ -4180,11 +4287,201 @@ export default function LandingPage() {
 
 
 
-                  <Link href="#" className="text-gray-400 text-sm hover:text-white transition-colors">
+                  <button onClick={() => setShowQuickStartModal(true)} className="text-gray-400 text-sm hover:text-red-500 transition-colors flex items-center gap-2 bg-transparent border-none cursor-pointer">
 
 
 
-                    新手教學
+                    <BookOpen className="w-4 h-4" />
+
+
+
+                    快速入門指南
+
+
+
+                  </button>
+
+
+
+                </li>
+
+
+
+                <li>
+
+
+
+                  <Link href="/developer" className="text-gray-400 text-sm hover:text-red-500 transition-colors flex items-center gap-2">
+
+
+
+                    <Code className="w-4 h-4" />
+
+
+
+                    開發者中心
+
+
+
+                  </Link>
+
+
+
+                </li>
+
+
+
+                <li className="relative" ref={faqDropdownRef}>
+                  <button
+                    onClick={() => setShowFaqDropdown(!showFaqDropdown)}
+                    className="text-gray-400 text-sm hover:text-red-500 transition-colors flex items-center gap-2 bg-transparent border-none cursor-pointer"
+                  >
+                    <HelpCircle className="w-4 h-4" />
+                    幫助中心
+                  </button>
+
+                  {/* 下拉選單 */}
+                  <AnimatePresence>
+                    {showFaqDropdown && (
+                      <motion.div
+                        initial={{ opacity: 0, y: -10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                        transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+                        className="absolute bottom-full left-0 mb-2 w-64 bg-[#111] rounded-lg border border-gray-800 shadow-xl overflow-hidden"
+                      >
+                        <div className="p-2 space-y-1">
+                          <div>
+                            <button
+                              onClick={() => setExpandedDropdownQuestion(expandedDropdownQuestion === 'line' ? null : 'line')}
+                              className="w-full text-left px-3 py-2 rounded-lg text-gray-300 text-sm hover:bg-gray-800 hover:text-white transition-colors flex items-center justify-between gap-2"
+                            >
+                              <span className="flex items-start gap-2">
+                                <span className="text-gray-500 mt-0.5">?</span>
+                                如何串接 LINE 官方帳號？
+                              </span>
+                              <svg
+                                className={`w-4 h-4 text-gray-400 transition-transform flex-shrink-0 ${expandedDropdownQuestion === 'line' ? 'rotate-180' : ''}`}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                              </svg>
+                            </button>
+                            <AnimatePresence>
+                              {expandedDropdownQuestion === 'line' && (
+                                <motion.div
+                                  initial={{ opacity: 0, maxHeight: 0 }}
+                                  animate={{ opacity: 1, maxHeight: 100 }}
+                                  exit={{ opacity: 0, maxHeight: 0 }}
+                                  transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+                                  className="px-3 py-2 text-gray-400 text-xs ml-6 border-l-2 border-red-500 mt-1 overflow-hidden"
+                                >
+                                  在系統設定的「LINE 串接」頁面中，按照指引完成 LINE Messaging API 的設定即可。
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                          <div>
+                            <button
+                              onClick={() => setExpandedDropdownQuestion(expandedDropdownQuestion === 'security' ? null : 'security')}
+                              className="w-full text-left px-3 py-2 rounded-lg text-gray-300 text-sm hover:bg-gray-800 hover:text-white transition-colors flex items-center justify-between gap-2"
+                            >
+                              <span className="flex items-start gap-2">
+                                <span className="text-gray-500 mt-0.5">?</span>
+                                我的顧客資料安全嗎？
+                              </span>
+                              <svg
+                                className={`w-4 h-4 text-gray-400 transition-transform flex-shrink-0 ${expandedDropdownQuestion === 'security' ? 'rotate-180' : ''}`}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                              </svg>
+                            </button>
+                            <AnimatePresence>
+                              {expandedDropdownQuestion === 'security' && (
+                                <motion.div
+                                  initial={{ opacity: 0, maxHeight: 0 }}
+                                  animate={{ opacity: 1, maxHeight: 100 }}
+                                  exit={{ opacity: 0, maxHeight: 0 }}
+                                  transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+                                  className="px-3 py-2 text-gray-400 text-xs ml-6 border-l-2 border-red-500 mt-1 overflow-hidden"
+                                >
+                                  我們採用 SSL/TLS 加密傳輸，並符合台灣個人資料保護法規，確保您的資料安全。
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                          <div>
+                            <button
+                              onClick={() => setExpandedDropdownQuestion(expandedDropdownQuestion === 'ai' ? null : 'ai')}
+                              className="w-full text-left px-3 py-2 rounded-lg text-gray-300 text-sm hover:bg-gray-800 hover:text-white transition-colors flex items-center justify-between gap-2"
+                            >
+                              <span className="flex items-start gap-2">
+                                <span className="text-gray-500 mt-0.5">?</span>
+                                如何讓 AI 自動回覆預約？
+                              </span>
+                              <svg
+                                className={`w-4 h-4 text-gray-400 transition-transform flex-shrink-0 ${expandedDropdownQuestion === 'ai' ? 'rotate-180' : ''}`}
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                              </svg>
+                            </button>
+                            <AnimatePresence>
+                              {expandedDropdownQuestion === 'ai' && (
+                                <motion.div
+                                  initial={{ opacity: 0, maxHeight: 0 }}
+                                  animate={{ opacity: 1, maxHeight: 100 }}
+                                  exit={{ opacity: 0, maxHeight: 0 }}
+                                  transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+                                  className="px-3 py-2 text-gray-400 text-xs ml-6 border-l-2 border-red-500 mt-1 overflow-hidden"
+                                >
+                                  在系統設定中啟用「自動預約」功能，AI 會自動辨識對話中的預約意圖並協助安排。
+                                </motion.div>
+                              )}
+                            </AnimatePresence>
+                          </div>
+                        </div>
+                        <div className="border-t border-gray-800 p-2">
+                          <button
+                            onClick={() => {
+                              setShowFaqDropdown(false);
+                              setShowHelpCenterModal(true);
+                            }}
+                            className="w-full text-left px-3 py-2 rounded-lg text-red-400 text-sm hover:bg-red-500/10 transition-colors flex items-center gap-2"
+                          >
+                            查看完整幫助中心
+                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                            </svg>
+                          </button>
+                        </div>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </li>
+
+
+
+                <li>
+
+
+
+                  <Link href="/changelog" className="text-gray-400 text-sm hover:text-red-500 transition-colors flex items-center gap-2">
+
+
+
+                    <FileText className="w-4 h-4" />
+
+
+
+                    更新日誌
 
 
 
@@ -4200,35 +4497,23 @@ export default function LandingPage() {
 
 
 
-                  <Link href="#" className="text-gray-400 text-sm hover:text-white transition-colors">
+                  <div className="text-gray-400 text-sm flex items-center gap-2">
 
 
 
-                    API 說明
+                    <Activity className="w-4 h-4" />
 
 
 
-                  </Link>
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
 
 
 
-                </li>
+                    系統狀態：運作正常
 
 
 
-                <li>
-
-
-
-                  <Link href="#" className="text-gray-400 text-sm hover:text-white transition-colors">
-
-
-
-                    常見問題
-
-
-
-                  </Link>
+                  </div>
 
 
 
@@ -4256,7 +4541,7 @@ export default function LandingPage() {
 
 
 
-              <h4 className="text-white font-bold mb-4">聯繫我們</h4>
+              <h4 className="text-white font-bold mb-3">聯繫我們</h4>
 
 
 
@@ -4272,7 +4557,7 @@ export default function LandingPage() {
 
 
 
-                    <Mail className="w-4 h-4" />
+                    <Mail className="w-5 h-5" />
 
 
 
@@ -4296,7 +4581,7 @@ export default function LandingPage() {
 
 
 
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" className="w-4 h-4 fill-current">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" className="w-5 h-5 fill-current">
 
 
 
@@ -4328,7 +4613,7 @@ export default function LandingPage() {
 
 
 
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-4 h-4 fill-current">
+                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" className="w-5 h-5 fill-current">
 
 
 
@@ -4396,7 +4681,7 @@ export default function LandingPage() {
 
 
 
-                <Link href="/privacy" className="text-gray-500 text-xs hover:text-white transition-colors">
+                <Link href="/privacy" className="text-gray-500 text-xs hover:text-red-500 transition-colors">
 
 
 
@@ -4412,7 +4697,7 @@ export default function LandingPage() {
 
 
 
-                <Link href="/terms" className="text-gray-500 text-xs hover:text-white transition-colors">
+                <Link href="/terms" className="text-gray-500 text-xs hover:text-red-500 transition-colors">
 
 
 
@@ -4448,11 +4733,11 @@ export default function LandingPage() {
 
 
 
-            <div className="space-y-2 text-center">
+            <div className="space-y-3 text-center">
 
 
 
-              <p className="text-[10px] text-gray-600 leading-relaxed">
+              <p className="text-[12px] text-gray-500 leading-relaxed">
 
 
 
@@ -4464,7 +4749,7 @@ export default function LandingPage() {
 
 
 
-              <p className="text-[10px] text-gray-600 leading-relaxed">
+              <p className="text-[12px] text-gray-500 leading-relaxed">
 
 
 
@@ -4476,7 +4761,7 @@ export default function LandingPage() {
 
 
 
-              <p className="text-[10px] text-gray-600 leading-relaxed">
+              <p className="text-[12px] text-gray-500 leading-relaxed">
 
 
 
@@ -4488,7 +4773,7 @@ export default function LandingPage() {
 
 
 
-              <p className="text-[10px] text-gray-600 leading-relaxed">
+              <p className="text-[12px] text-gray-500 leading-relaxed">
 
 
 
@@ -4513,6 +4798,1141 @@ export default function LandingPage() {
 
 
       </footer>
+
+
+
+      {/* 影片播放彈窗 */}
+
+
+
+      <AnimatePresence>
+
+
+
+        {showVideoModal && (
+
+
+
+          <motion.div
+
+
+
+            initial={{ opacity: 0 }}
+
+
+
+            animate={{ opacity: 1 }}
+
+
+
+            exit={{ opacity: 0 }}
+
+
+
+            onClick={() => setShowVideoModal(false)}
+
+
+
+            className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 pt-20"
+
+
+
+          >
+
+
+
+            <motion.div
+
+
+
+              initial={{ scale: 0.9, opacity: 0 }}
+
+
+
+              animate={{ scale: 1, opacity: 1 }}
+
+
+
+              exit={{ scale: 0.9, opacity: 0 }}
+
+
+
+              onClick={(e) => e.stopPropagation()}
+
+
+
+              className="bg-[#0A0A0A] rounded-2xl w-full max-w-4xl overflow-hidden shadow-2xl"
+
+
+
+            >
+
+
+
+              {/* 影片容器 */}
+
+
+
+              <div className="aspect-video bg-gray-900 flex items-center justify-center relative">
+
+
+
+                <div className="text-center">
+
+
+
+                  <Play className="w-16 h-16 text-gray-600 mx-auto mb-4" />
+
+
+
+                  <p className="text-gray-500 text-lg">影片即將上線</p>
+
+
+
+                  <p className="text-gray-600 text-sm mt-2">敬請期待</p>
+
+
+
+                </div>
+
+
+
+              </div>
+
+
+
+              {/* 播放控制列 */}
+
+
+
+              <div className="bg-[#1A1A1A] p-4 flex items-center justify-between">
+
+
+
+                <div className="flex items-center gap-4">
+
+
+
+                  <button className="text-white hover:text-red-500 transition-colors">
+
+
+
+                    <Play className="w-6 h-6" />
+
+
+
+                  </button>
+
+
+
+                  <button className="text-white hover:text-red-500 transition-colors">
+
+
+
+                    <Pause className="w-6 h-6" />
+
+
+
+                  </button>
+
+
+
+                  <button className="text-white hover:text-red-500 transition-colors">
+
+
+
+                    <RotateCcw className="w-5 h-5" />
+
+
+
+                  </button>
+
+
+
+                  <button className="text-white hover:text-red-500 transition-colors">
+
+
+
+                    <RotateCw className="w-5 h-5" />
+
+
+
+                  </button>
+
+
+
+                </div>
+
+
+
+                <button
+
+
+
+                  onClick={() => setShowVideoModal(false)}
+
+
+
+                  className="text-white hover:text-red-500 transition-colors"
+
+
+
+                >
+
+
+
+                  <X className="w-6 h-6" />
+
+
+
+                </button>
+
+
+
+              </div>
+
+
+
+            </motion.div>
+
+
+
+          </motion.div>
+
+
+
+        )}
+
+
+
+      </AnimatePresence>
+
+
+
+      {/* 快速入門指南 Modal */}
+
+
+
+      <AnimatePresence>
+
+
+
+        {showQuickStartModal && (
+
+
+
+          <motion.div
+
+
+
+            initial={{ opacity: 0 }}
+
+
+
+            animate={{ opacity: 1 }}
+
+
+
+            exit={{ opacity: 0 }}
+
+
+
+            onClick={() => setShowQuickStartModal(false)}
+
+
+
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 pt-20"
+
+
+
+          >
+
+
+
+            <motion.div
+
+
+
+              initial={{ scale: 0.9, opacity: 0 }}
+
+
+
+              animate={{ scale: 1, opacity: 1 }}
+
+
+
+              exit={{ scale: 0.9, opacity: 0 }}
+
+
+
+              onClick={(e) => e.stopPropagation()}
+
+
+
+              className="bg-[#0A0A0A] rounded-2xl w-full max-w-5xl overflow-hidden shadow-2xl border border-gray-800"
+
+
+
+            >
+
+
+
+              <div className="p-6">
+
+
+
+                <div className="flex items-center justify-between mb-6">
+
+
+
+                  <h3 className="text-white text-2xl font-bold flex items-center gap-2">
+
+
+
+                    <BookOpen className="w-6 h-6" />
+
+
+
+                    快速入門指南 - 功能預覽
+
+
+
+                  </h3>
+
+
+
+                  <button
+
+
+
+                    onClick={() => { setShowQuickStartModal(false); setQuickStartStep(0); }}
+
+
+
+                    className="text-gray-400 hover:text-white transition-colors"
+
+
+
+                  >
+
+
+
+                    <X className="w-6 h-6" />
+
+
+
+                  </button>
+
+
+
+                </div>
+
+
+
+                {/* 步驟指示器 */}
+
+
+
+                <div className="flex items-center justify-center gap-2 mb-6">
+
+
+
+                  {[0, 1, 2, 3].map((step) => (
+
+
+
+                    <div
+
+
+
+                      key={step}
+
+
+
+                      className={`w-12 h-1 rounded-full transition-all ${
+
+
+
+                        quickStartStep === step ? 'bg-red-500' : 'bg-gray-700'
+
+
+
+                      }`}
+
+
+
+                    />
+
+
+
+                  ))}
+
+
+
+                </div>
+
+
+
+                {/* 內容區域 */}
+
+
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+
+
+
+                  {/* 左側：截圖區域 */}
+
+
+
+                  <div className="aspect-video bg-gray-900 rounded-xl border-2 border-white/20 shadow-[0_0_30px_rgba(255,255,255,0.1)] flex items-center justify-center">
+
+
+
+                    <div className="text-center">
+
+
+
+                      <p className="text-gray-500 text-lg">截圖即將上線</p>
+
+
+
+                      <p className="text-gray-600 text-sm mt-2">Step {quickStartStep + 1}</p>
+
+
+
+                    </div>
+
+
+
+                  </div>
+
+
+
+                  {/* 右側：文字說明 */}
+
+
+
+                  <div className="flex flex-col justify-center">
+
+
+
+                    <AnimatePresence mode="wait">
+
+
+
+                      {quickStartStep === 0 && (
+
+
+
+                        <motion.div
+
+
+
+                          key="step-0"
+
+
+
+                          initial={{ opacity: 0, x: 50 }}
+
+
+
+                          animate={{ opacity: 1, x: 0 }}
+
+
+
+                          exit={{ opacity: 0, x: -50 }}
+
+
+
+                          transition={{ duration: 0.3 }}
+
+
+
+                        >
+
+
+
+                          <div>
+
+
+
+                        <h4 className="text-white text-2xl font-bold mb-4">全局監控</h4>
+
+
+
+                        <p className="text-gray-400 text-lg leading-relaxed">
+
+
+
+                          您的數位店長正在實時運算。從今日預約到成交轉換率，所有關鍵指標一目了然。不再需要翻帳本，數據會主動告訴您今天經營得好不好。
+
+
+
+                        </p>
+
+
+
+                        </div>
+
+
+
+                        </motion.div>
+
+
+
+                      )}
+
+
+
+                      {quickStartStep === 1 && (
+
+
+
+                        <motion.div
+
+
+
+                          key="step-1"
+
+
+
+                          initial={{ opacity: 0, x: 50 }}
+
+
+
+                          animate={{ opacity: 1, x: 0 }}
+
+
+
+                          exit={{ opacity: 0, x: -50 }}
+
+
+
+                          transition={{ duration: 0.3 }}
+
+
+
+                        >
+
+
+
+                          <div>
+
+
+
+                        <h4 className="text-white text-2xl font-bold mb-4">自動排程</h4>
+
+
+
+                        <p className="text-gray-400 text-lg leading-relaxed">
+
+
+
+                          自動接管您的排程。系統能自動辨識對話中的預約意圖，並自動同步到行事曆。您只需要專注於服務，預約的事，AI 會幫您排好。
+
+
+
+                        </p>
+
+
+
+                        </div>
+
+
+
+                        </motion.div>
+
+
+
+                      )}
+
+
+
+                      {quickStartStep === 2 && (
+
+
+
+                        <motion.div
+
+
+
+                          key="step-2"
+
+
+
+                          initial={{ opacity: 0, x: 50 }}
+
+
+
+                          animate={{ opacity: 1, x: 0 }}
+
+
+
+                          exit={{ opacity: 0, x: -50 }}
+
+
+
+                          transition={{ duration: 0.3 }}
+
+
+
+                        >
+
+
+
+                          <div>
+
+
+
+                        <h4 className="text-white text-2xl font-bold mb-4">知識庫與對話</h4>
+
+
+
+                        <p className="text-gray-400 text-lg leading-relaxed">
+
+
+
+                          這是您店舖的集體智慧。透過 FAQ 知識庫，您可以教導 AI 如何回答常見問題；在對話紀錄中，您可以隨時介入高價值的深度對談。
+
+
+
+                        </p>
+
+
+
+                        </div>
+
+
+
+                        </motion.div>
+
+
+
+                      )}
+
+
+
+                      {quickStartStep === 3 && (
+
+
+
+                        <motion.div
+
+
+
+                          key="step-3"
+
+
+
+                          initial={{ opacity: 0, x: 50 }}
+
+
+
+                          animate={{ opacity: 1, x: 0 }}
+
+
+
+                          exit={{ opacity: 0, x: -50 }}
+
+
+
+                          transition={{ duration: 0.3 }}
+
+
+
+                        >
+
+
+
+                          <div>
+
+
+
+                        <h4 className="text-white text-2xl font-bold mb-4">品牌自定義</h4>
+
+
+
+                        <p className="text-gray-400 text-lg leading-relaxed">
+
+
+
+                          一鍵串接 LINE 官方帳號。從店家基本資料到 AI 回覆的語氣風格，只需在設定中微調，您的 AI 店長就能以最專業的形象代表您。
+
+
+
+                        </p>
+
+
+
+                        </div>
+
+
+
+                        </motion.div>
+
+
+
+                      )}
+
+
+
+                    </AnimatePresence>
+
+
+
+                  </div>
+
+
+
+                </div>
+
+
+
+                {/* 導航按鈕 */}
+
+
+
+                <div className="flex items-center justify-between">
+
+
+
+                  <button
+
+
+
+                    onClick={() => setQuickStartStep(Math.max(0, quickStartStep - 1))}
+
+
+
+                    disabled={quickStartStep === 0}
+
+
+
+                    className={`px-6 py-3 rounded-lg font-bold transition-colors ${
+
+
+
+                      quickStartStep === 0 ? 'bg-gray-800 text-gray-500 cursor-not-allowed' : 'bg-gray-700 text-white hover:bg-gray-600'
+
+
+
+                    }`}
+
+
+
+                  >
+
+
+
+                    上一步
+
+
+
+                  </button>
+
+
+
+                  {quickStartStep === 3 ? (
+
+
+
+                    <Link
+
+
+
+                      href="/register"
+
+
+
+                      onClick={() => { setShowQuickStartModal(false); setQuickStartStep(0); }}
+
+
+
+                      className="px-8 py-3 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600 transition-colors"
+
+
+
+                    >
+
+
+
+                      立即免費體驗
+
+
+
+                    </Link>
+
+
+
+                  ) : (
+
+
+
+                    <button
+
+
+
+                      onClick={() => setQuickStartStep(Math.min(3, quickStartStep + 1))}
+
+
+
+                      className="px-6 py-3 bg-red-500 text-white rounded-lg font-bold hover:bg-red-600 transition-colors"
+
+
+
+                    >
+
+
+
+                      下一步
+
+
+
+                    </button>
+
+
+
+                  )}
+
+
+
+                </div>
+
+
+
+              </div>
+
+
+
+            </motion.div>
+
+
+
+          </motion.div>
+
+
+
+        )}
+
+
+
+      </AnimatePresence>
+
+
+
+      {/* 幫助中心 Modal */}
+
+
+
+      <AnimatePresence>
+
+
+
+        {showHelpCenterModal && (
+
+
+
+          <motion.div
+
+
+
+            initial={{ opacity: 0 }}
+
+
+
+            animate={{ opacity: 1 }}
+
+
+
+            exit={{ opacity: 0 }}
+
+
+
+            transition={{ duration: 0.2 }}
+
+
+
+            onClick={() => setShowHelpCenterModal(false)}
+
+
+
+            className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4 pt-20"
+
+
+
+          >
+
+
+
+            <motion.div
+
+
+
+              initial={{ scale: 0.9, opacity: 0, y: 20 }}
+
+
+
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+
+
+
+              exit={{ scale: 0.9, opacity: 0, y: 20 }}
+
+
+
+              transition={{ duration: 0.2 }}
+
+
+
+              onClick={(e) => e.stopPropagation()}
+
+
+
+              className="bg-[#0A0A0A] rounded-2xl w-full max-w-2xl overflow-hidden shadow-2xl"
+
+
+
+            >
+
+
+
+              <div className="p-6">
+
+
+
+                <div className="flex items-center justify-between mb-4">
+
+
+
+                  <h3 className="text-white text-xl font-bold flex items-center gap-2">
+
+
+
+                    <HelpCircle className="w-6 h-6" />
+
+
+
+                    幫助中心
+
+
+
+                  </h3>
+
+
+
+                  <button
+
+
+
+                    onClick={() => setShowHelpCenterModal(false)}
+
+
+
+                    className="text-gray-400 hover:text-white transition-colors"
+
+
+
+                  >
+
+
+
+                    <X className="w-6 h-6" />
+
+
+
+                  </button>
+
+
+
+                </div>
+
+
+
+                <div className="relative max-h-96">
+                  <div className="text-gray-400 space-y-3 max-h-96 overflow-y-auto pr-2 scrollbar-hide">
+                    {/* 帳務相關 */}
+                    <div className="bg-[#111] rounded-lg border border-gray-800 overflow-hidden">
+                    <button
+                      onClick={() => setExpandedFaqCategory(expandedFaqCategory === 'billing' ? null : 'billing')}
+                      className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-gray-800 transition-colors"
+                    >
+                      <span className="text-white font-medium">帳務相關</span>
+                      <svg
+                        className={`w-5 h-5 text-gray-400 transition-transform ${expandedFaqCategory === 'billing' ? 'rotate-180' : ''}`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {expandedFaqCategory === 'billing' && (
+                      <div className="px-4 pb-4 space-y-3">
+                        <div className="border-l-2 border-red-500 pl-3">
+                          <p className="text-gray-300 text-sm font-medium mb-1">如何變更訂閱計劃？</p>
+                          <p className="text-gray-400 text-xs">您可以在 Dashboard 的「訂閱管理」頁面中隨時升級或降級您的計劃。</p>
+                        </div>
+                        <div className="border-l-2 border-red-500 pl-3">
+                          <p className="text-gray-300 text-sm font-medium mb-1">退費政策是什麼？</p>
+                          <p className="text-gray-400 text-xs">我們提供 7 天無條件退費保證，若不滿意可申請全額退款。</p>
+                        </div>
+                        <div className="border-l-2 border-red-500 pl-3">
+                          <p className="text-gray-300 text-sm font-medium mb-1">如何開立發票？</p>
+                          <p className="text-gray-400 text-xs">請稍待我們新增發票開立功能，目前可聯繫客服協助處理。</p>
+                        </div>
+                        <div className="border-l-2 border-red-500 pl-3">
+                          <p className="text-gray-300 text-sm font-medium mb-1">付款方式有哪些？</p>
+                          <p className="text-gray-400 text-xs">目前支援信用卡、LINE Pay 等付款方式。</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* AI 設定 */}
+                  <div className="bg-[#111] rounded-lg border border-gray-800 overflow-hidden">
+                    <button
+                      onClick={() => setExpandedFaqCategory(expandedFaqCategory === 'ai' ? null : 'ai')}
+                      className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-gray-800 transition-colors"
+                    >
+                      <span className="text-white font-medium">AI 設定</span>
+                      <svg
+                        className={`w-5 h-5 text-gray-400 transition-transform ${expandedFaqCategory === 'ai' ? 'rotate-180' : ''}`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {expandedFaqCategory === 'ai' && (
+                      <div className="px-4 pb-4 space-y-3">
+                        <div className="border-l-2 border-red-500 pl-3">
+                          <p className="text-gray-300 text-sm font-medium mb-1">如何調整 AI 回覆語氣？</p>
+                          <p className="text-gray-400 text-xs">在系統設定的「AI 語氣」頁面中，您可以選擇專業、親切、活潑等不同語氣風格。</p>
+                        </div>
+                        <div className="border-l-2 border-red-500 pl-3">
+                          <p className="text-gray-300 text-sm font-medium mb-1">如何匯入 FAQ 知識庫？</p>
+                          <p className="text-gray-400 text-xs">請稍待我們新增批次匯入功能，目前可在知識庫頁面手動新增 FAQ。</p>
+                        </div>
+                        <div className="border-l-2 border-red-500 pl-3">
+                          <p className="text-gray-300 text-sm font-medium mb-1">AI 無法回答問題怎麼辦？</p>
+                          <p className="text-gray-400 text-xs">您可以在對話紀錄中手動介入回答，並將該問題加入知識庫供 AI 學習。</p>
+                        </div>
+                        <div className="border-l-2 border-red-500 pl-3">
+                          <p className="text-gray-300 text-sm font-medium mb-1">如何讓 AI 自動回覆預約？</p>
+                          <p className="text-gray-400 text-xs">在系統設定中啟用「自動預約」功能，AI 會自動辨識對話中的預約意圖並協助安排。</p>
+                        </div>
+                        <div className="border-l-2 border-red-500 pl-3">
+                          <p className="text-gray-300 text-sm font-medium mb-1">AI 會學習我的回覆方式嗎？</p>
+                          <p className="text-gray-400 text-xs">會！透過知識庫和對話紀錄，AI 會逐漸學習您的回覆風格和業務邏輯。</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 預約管理 */}
+                  <div className="bg-[#111] rounded-lg border border-gray-800 overflow-hidden">
+                    <button
+                      onClick={() => setExpandedFaqCategory(expandedFaqCategory === 'booking' ? null : 'booking')}
+                      className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-gray-800 transition-colors"
+                    >
+                      <span className="text-white font-medium">預約管理</span>
+                      <svg
+                        className={`w-5 h-5 text-gray-400 transition-transform ${expandedFaqCategory === 'booking' ? 'rotate-180' : ''}`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {expandedFaqCategory === 'booking' && (
+                      <div className="px-4 pb-4 space-y-3">
+                        <div className="border-l-2 border-red-500 pl-3">
+                          <p className="text-gray-300 text-sm font-medium mb-1">如何手動修改預約？</p>
+                          <p className="text-gray-400 text-xs">在行事曆頁面中點擊預約即可進行編輯或取消操作。</p>
+                        </div>
+                        <div className="border-l-2 border-red-500 pl-3">
+                          <p className="text-gray-300 text-sm font-medium mb-1">行事曆同步失敗怎麼辦？</p>
+                          <p className="text-gray-400 text-xs">請檢查您的網路連線，或重新連接 LINE 官方帳號。若問題持續請聯繫客服。</p>
+                        </div>
+                        <div className="border-l-2 border-red-500 pl-3">
+                          <p className="text-gray-300 text-sm font-medium mb-1">如何設定營業時間？</p>
+                          <p className="text-gray-400 text-xs">在系統設定的「店家資訊」頁面中，您可以設定每日的營業時間和休息日。</p>
+                        </div>
+                        <div className="border-l-2 border-red-500 pl-3">
+                          <p className="text-gray-300 text-sm font-medium mb-1">如何導入既有客戶資料？</p>
+                          <p className="text-gray-400 text-xs">請稍待我們新增批次匯入功能，目前可聯繫客服協助處理。</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 系統串接 */}
+                  <div className="bg-[#111] rounded-lg border border-gray-800 overflow-hidden">
+                    <button
+                      onClick={() => setExpandedFaqCategory(expandedFaqCategory === 'integration' ? null : 'integration')}
+                      className="w-full px-4 py-3 flex items-center justify-between text-left hover:bg-gray-800 transition-colors"
+                    >
+                      <span className="text-white font-medium">系統串接</span>
+                      <svg
+                        className={`w-5 h-5 text-gray-400 transition-transform ${expandedFaqCategory === 'integration' ? 'rotate-180' : ''}`}
+                        fill="none"
+                        stroke="currentColor"
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
+                    {expandedFaqCategory === 'integration' && (
+                      <div className="px-4 pb-4 space-y-3">
+                        <div className="border-l-2 border-red-500 pl-3">
+                          <p className="text-gray-300 text-sm font-medium mb-1">如何串接 LINE 官方帳號？</p>
+                          <p className="text-gray-400 text-xs">在系統設定的「LINE 串接」頁面中，按照指引完成 LINE Messaging API 的設定即可。</p>
+                        </div>
+                        <div className="border-l-2 border-red-500 pl-3">
+                          <p className="text-gray-300 text-sm font-medium mb-1">我的顧客資料安全嗎？</p>
+                          <p className="text-gray-400 text-xs">我們採用 SSL/TLS 加密傳輸，並符合台灣個人資料保護法規，確保您的資料安全。</p>
+                        </div>
+                        <div className="border-l-2 border-red-500 pl-3">
+                          <p className="text-gray-300 text-sm font-medium mb-1">如何使用 API 整合？</p>
+                          <p className="text-gray-400 text-xs">請參考我們的開發者中心文件，獲取 API Key 並進行系統整合。</p>
+                        </div>
+                        <div className="border-l-2 border-red-500 pl-3">
+                          <p className="text-gray-300 text-sm font-medium mb-1">支援 Webhooks 通知嗎？</p>
+                          <p className="text-gray-400 text-xs">請稍待我們新增 Webhooks 功能，屆時您可接收預約建立、客戶訊息等即時通知。</p>
+                        </div>
+                        <div className="border-l-2 border-red-500 pl-3">
+                          <p className="text-gray-300 text-sm font-medium mb-1">可以串接其他通訊平台嗎？</p>
+                          <p className="text-gray-400 text-xs">請稍待我們新增其他平台支援，目前專注於 LINE 官方帳號的整合。</p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  </div>
+                  <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-[#0A0A0A] to-transparent pointer-events-none"></div>
+                </div>
+
+
+
+              </div>
+
+
+
+            </motion.div>
+
+
+
+          </motion.div>
+
+
+
+        )}
+
+
+
+      </AnimatePresence>
 
 
 
