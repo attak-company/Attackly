@@ -302,6 +302,14 @@ export default function LandingPage() {
 
 
 
+  const [isIndustrySectionInView, setIsIndustrySectionInView] = useState(false);
+
+
+
+  const industrySectionRef = useRef<HTMLElement>(null);
+
+
+
   const sparkRef = useRef<HTMLDivElement>(null);
 
   const animationRef = useRef<Animation | null>(null);
@@ -317,6 +325,35 @@ export default function LandingPage() {
   const animationIntervalRef2 = useRef<NodeJS.Timeout | null>(null);
 
   const isHoveredRef2 = useRef(false);
+
+
+
+  // Intersection Observer for Industry Section
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setTimeout(() => {
+              setIsIndustrySectionInView(true);
+            }, 300);
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.2 }
+    );
+
+    if (industrySectionRef.current) {
+      observer.observe(industrySectionRef.current);
+    }
+
+    return () => {
+      if (industrySectionRef.current) {
+        observer.unobserve(industrySectionRef.current);
+      }
+    };
+  }, []);
 
   const handleSparkEnter = () => {
     isHoveredRef.current = true;
@@ -818,7 +855,7 @@ export default function LandingPage() {
 
               onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
 
-              className="hover:animate-[float_2s_linear_infinite] hover:drop-shadow-[4px_4px_10px_rgba(50,50,50,0.5)] rounded-none bg-transparent overflow-hidden"
+              className="relative cursor-pointer rounded-none bg-transparent overflow-hidden transition-all duration-300 ease hover:animate-[random-float_4s_ease-in-out_infinite] hover:drop-shadow-[4px_4px_8px_rgba(0,0,0,0.5)]"
 
             >
 
@@ -1940,16 +1977,16 @@ export default function LandingPage() {
 
       <div className="w-full relative group">
         <div className="absolute inset-0 py-8 -my-8 z-20"></div>
-        <div className="w-full h-1 relative overflow-visible bg-red-600 z-10 group-hover:h-2 group-hover:bg-red-500 group-hover:shadow-[0_0_20px_rgba(255,0,0,0.8)] group-hover:-translate-y-0.5 transition-all duration-300 animate-[divider-breath_10s_ease-in-out_infinite]">
+        <div className="w-full h-1 relative overflow-visible bg-red-600 z-10 shadow-[0_0_25px_rgba(255,0,0,0.8)] group-hover:h-2 group-hover:bg-red-500 group-hover:shadow-[0_0_30px_rgba(255,0,0,0.9)] group-hover:-translate-y-0.5 transition-all duration-300">
 
 
 
-        <div 
+        <div
 
 
 
           ref={sparkRef}
-          className="absolute top-1/2 left-0 w-24 h-16 -translate-y-1/2 z-50 group-hover:scale-150 group-hover:brightness-125 transition-all duration-300"
+          className="absolute top-1/2 left-0 w-24 h-16 -translate-y-1/2 -translate-x-1/2 z-50 group-hover:scale-150 group-hover:brightness-125 transition-all duration-300"
           style={{
             mixBlendMode: 'screen',
             animation: 'laser-point 10s ease-in-out infinite alternate, pulse-breath 2s ease-in-out infinite'
@@ -2548,7 +2585,7 @@ export default function LandingPage() {
 
       {/* 行業應用情境 */}
 
-      <section id="solutions" className="py-32 px-6 bg-[#FAFAFA]">
+      <section ref={industrySectionRef} id="solutions" className="py-32 px-6 bg-[#FAFAFA]">
 
         <div className="max-w-7xl mx-auto">
 
@@ -2656,7 +2693,7 @@ export default function LandingPage() {
 
                           initial={{ opacity: 0, x: -20 }}
 
-                          animate={{ opacity: 1, x: 0 }}
+                          animate={isIndustrySectionInView || selectedIndustry !== '餐飲服務' ? { opacity: 1, x: 0 } : { opacity: 0, x: -20 }}
 
                           transition={{ delay: 0.5 + idx * (feature.length * 0.05 + 0.2) }}
 
@@ -2716,7 +2753,7 @@ export default function LandingPage() {
 
                             initial={{ opacity: 0, x: msg.type === 'user' ? 20 : -20 }}
 
-                            animate={{ opacity: 1, x: 0 }}
+                            animate={isIndustrySectionInView || selectedIndustry !== '餐飲服務' ? { opacity: 1, x: 0 } : { opacity: 0, x: msg.type === 'user' ? 20 : -20 }}
 
                             exit={{ opacity: 0, x: msg.type === 'user' ? -20 : 20 }}
 
@@ -2948,11 +2985,11 @@ export default function LandingPage() {
 
       <div className="w-full relative group">
         <div className="absolute inset-0 py-8 -my-8 z-20"></div>
-        <div className="w-full h-1 relative overflow-visible bg-red-600 z-10 group-hover:h-2 group-hover:bg-red-500 group-hover:shadow-[0_0_20px_rgba(255,0,0,0.8)] group-hover:-translate-y-0.5 transition-all duration-300 animate-[divider-breath_10s_ease-in-out_infinite]">
+        <div className="w-full h-1 relative overflow-visible bg-red-600 z-10 shadow-[0_0_25px_rgba(255,0,0,0.8)] group-hover:h-2 group-hover:bg-red-500 group-hover:shadow-[0_0_30px_rgba(255,0,0,0.9)] group-hover:-translate-y-0.5 transition-all duration-300">
 
-        <div 
+        <div
           ref={sparkRef2}
-          className="absolute top-1/2 left-0 w-24 h-16 -translate-y-1/2 z-50 group-hover:scale-150 group-hover:brightness-125 transition-all duration-300"
+          className="absolute top-1/2 left-0 w-24 h-16 -translate-y-1/2 -translate-x-1/2 z-50 group-hover:scale-150 group-hover:brightness-125 transition-all duration-300"
           style={{
             mixBlendMode: 'screen',
             animation: 'laser-point 10s ease-in-out infinite alternate, pulse-breath 2s ease-in-out infinite'
