@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Request, Header, HTTPException
 from linebot import LineBotApi, WebhookHandler
 from linebot.exceptions import InvalidSignatureError, LineBotApiError
-from linebot.models import MessageEvent, TextMessage, TextSendMessage
+from linebot.models import MessageEvent, TextMessage, TextSendMessage, FlexSendMessage, URIAction
 from app.core.config import settings
 from app.ai.graph import agent_app
 import uuid
@@ -70,16 +70,19 @@ async def get_user_line_config(user_id: str):
 async def get_user_ai_settings(user_id: str):
     """從資料庫獲取用戶的 AI 設定和店家資料"""
     try:
-        response = supabase.table('users').select('ai_settings, store_name, store_address, store_phone, store_type').eq('id', user_id).execute()
+        response = supabase.table('users').select('ai_settings, store_name, store_address, store_google_map_link, store_phone, store_type').eq('id', user_id).execute()
 
         if response.data:
             user_data = response.data[0]
             ai_settings = user_data.get('ai_settings', {})
             return {
                 'tone': ai_settings.get('tone', 'friendly'),
+                'customTone': ai_settings.get('customTone', ''),
+                'sampleText': ai_settings.get('sampleText', ''),
                 'rules': ai_settings.get('rules', []),
                 'store_name': user_data.get('store_name', ''),
                 'store_address': user_data.get('store_address', ''),
+                'google_map_link': user_data.get('store_google_map_link', ''),
                 'store_phone': user_data.get('store_phone', ''),
                 'store_type': user_data.get('store_type', '')
             }
@@ -87,9 +90,12 @@ async def get_user_ai_settings(user_id: str):
             # 預設設定
             return {
                 'tone': 'friendly',
+                'customTone': '',
+                'sampleText': '',
                 'rules': [],
                 'store_name': '',
                 'store_address': '',
+                'google_map_link': '',
                 'store_phone': '',
                 'store_type': ''
             }
@@ -98,9 +104,12 @@ async def get_user_ai_settings(user_id: str):
         # 出錯時使用預設設定
         return {
             'tone': 'friendly',
+            'customTone': '',
+            'sampleText': '',
             'rules': [],
             'store_name': '',
             'store_address': '',
+            'google_map_link': '',
             'store_phone': '',
             'store_type': ''
         }
@@ -156,6 +165,8 @@ async def process_line_message(event: MessageEvent, user_id: str, line_bot_api: 
         system_prompt += f"\n店家名稱：{ai_settings['store_name']}"
     if ai_settings['store_address']:
         system_prompt += f"\n店家地址：{ai_settings['store_address']}"
+    if ai_settings['google_map_link']:
+        system_prompt += f"\nGoogle Map 連結：{ai_settings['google_map_link']}"
     if ai_settings['store_phone']:
         system_prompt += f"\n店家電話：{ai_settings['store_phone']}"
     if ai_settings['store_type']:
@@ -165,16 +176,30 @@ async def process_line_message(event: MessageEvent, user_id: str, line_bot_api: 
     tone_map = {
         'friendly': '親切友善',
         'professional': '專業正式',
+        'humorous': '幽默風趣',
         'casual': '輕鬆隨性'
     }
-    system_prompt += f"\n請使用{tone_map.get(ai_settings['tone'], '親切友善')}的語氣回覆。"
+    
+    # 根據不同選項使用不同的語氣提示
+    if ai_settings['tone'] == 'sample' and ai_settings.get('sampleText'):
+        # 依照你的口氣：使用範例對話
+        system_prompt += f"\n請參考以下對話範例的語氣風格來回覆：\n{ai_settings['sampleText']}\n請模仿這種語氣風格。"
+    elif ai_settings['tone'] == 'custom' and ai_settings.get('customTone'):
+        # 自訂語氣：使用簡短描述
+        tone_description = ai_settings['customTone']
+        system_prompt += f"\n請使用{tone_description}的語氣回覆。"
+    else:
+        # 預設語氣
+        tone_description = tone_map.get(ai_settings['tone'], '親切友善')
+        system_prompt += f"\n請使用{tone_description}的語氣回覆。"
 
     # 添加規則
     if ai_settings['rules']:
-        system_prompt += "\n請遵守以下回覆規則："
+        system_prompt += "\n請遵守以下回覆規則（在回覆前先檢查使用者訊息是否符合條件）："
         for rule in ai_settings['rules']:
             if rule.get('condition') and rule.get('action'):
                 system_prompt += f"\n- 條件：{rule['condition']}，違反時：{rule['action']}"
+        system_prompt += "\n如果使用者訊息符合上述任何條件，請按照違反時的處理方式回應。"
 
     print(f"System prompt: {system_prompt[:200]}...")
 
@@ -267,10 +292,72 @@ async def process_line_message(event: MessageEvent, user_id: str, line_bot_api: 
         print(f"Error saving user message to database: {e}")
 
     # 回覆用戶
-    line_bot_api.reply_message(
-        event.reply_token,
-        TextSendMessage(text=ai_response)
-    )
+    # 檢測是否為地址相關查詢
+    address_keywords = ['地址', '在哪裡', '位置', '怎麼去', '如何到達', '地址是什麼', '店址', '位置在哪']
+    is_address_query = any(keyword in text for keyword in address_keywords)
+
+    if is_address_query and ai_settings.get('store_address') and ai_settings.get('google_map_link'):
+        # 發送地址和 Google Map 連結
+        address_message = f"我們的地址是：{ai_settings['store_address']}"
+        
+        # 建立 Flex Message 包含 Google Map 按鈕
+        flex_message = FlexSendMessage(
+            alt_text='店家地址',
+            contents={
+                "type": "bubble",
+                "body": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "contents": [
+                        {
+                            "type": "text",
+                            "text": "店家地址",
+                            "weight": "bold",
+                            "color": "#1D1D1F",
+                            "size": "md"
+                        },
+                        {
+                            "type": "text",
+                            "text": ai_settings['store_address'],
+                            "wrap": True,
+                            "margin": "md",
+                            "color": "#6E6E73",
+                            "size": "sm"
+                        }
+                    ]
+                },
+                "footer": {
+                    "type": "box",
+                    "layout": "vertical",
+                    "spacing": "sm",
+                    "contents": [
+                        {
+                            "type": "button",
+                            "style": "primary",
+                            "height": "sm",
+                            "action": {
+                                "type": "uri",
+                                "label": "開啟 Google Map 導航",
+                                "uri": ai_settings['google_map_link']
+                            }
+                        }
+                    ]
+                }
+            }
+        )
+
+        line_bot_api.reply_message(
+            event.reply_token,
+            [
+                TextSendMessage(text=address_message),
+                flex_message
+            ]
+        )
+    else:
+        line_bot_api.reply_message(
+            event.reply_token,
+            TextSendMessage(text=ai_response)
+        )
 
     # 異步儲存 AI 回應（不阻塞 webhook 響應）
     async def save_ai_response():
@@ -279,10 +366,16 @@ async def process_line_message(event: MessageEvent, user_id: str, line_bot_api: 
             import asyncio
             await asyncio.sleep(0.5)
             
+            # 如果是地址查詢，儲存地址訊息
+            if is_address_query and ai_settings.get('store_address'):
+                response_content = f"我們的地址是：{ai_settings['store_address']}\nGoogle Map 連結：{ai_settings.get('google_map_link', '')}"
+            else:
+                response_content = ai_response
+            
             supabase.table('messages').insert({
                 'conversation_id': conversation_id,
                 'role': 'ai',
-                'content': ai_response,
+                'content': response_content,
                 'timestamp': 'now()'
             }).execute()
             print(f"AI response saved to database: {conversation_id}")
