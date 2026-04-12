@@ -9,6 +9,7 @@ export default function StoreSettingsPage() {
   const [config, setConfig] = useState({
     storeName: "",
     address: "",
+    googleMapLink: "",
     phone: "",
     storeType: "",
   });
@@ -25,15 +26,16 @@ export default function StoreSettingsPage() {
           // 從資料庫讀取店家資料
           const { data: userData, error } = await supabase
             .from('users')
-            .select('store_name, address, phone, store_type')
+            .select('store_name, store_address, store_google_map_link, store_phone, store_type')
             .eq('id', user.id)
             .single();
           
           if (userData) {
             setConfig({
               storeName: userData.store_name || '',
-              address: userData.address || '',
-              phone: userData.phone || '',
+              address: userData.store_address || '',
+              googleMapLink: userData.store_google_map_link || '',
+              phone: userData.store_phone || '',
               storeType: userData.store_type || ''
             });
           }
@@ -63,8 +65,9 @@ export default function StoreSettingsPage() {
         .from('users')
         .update({
           store_name: config.storeName,
-          address: config.address,
-          phone: config.phone,
+          store_address: config.address,
+          store_google_map_link: config.googleMapLink,
+          store_phone: config.phone,
           store_type: config.storeType
         })
         .eq('id', user.id);
@@ -98,7 +101,7 @@ export default function StoreSettingsPage() {
           {/* 店名 */}
           <div>
             <label className="block text-sm font-medium text-gray-900 mb-2">
-              店名
+              店家名稱
             </label>
             <div className="relative">
               <Store className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
@@ -112,19 +115,19 @@ export default function StoreSettingsPage() {
             </div>
           </div>
 
-          {/* 地址 */}
+          {/* 店家類型 */}
           <div>
             <label className="block text-sm font-medium text-gray-900 mb-2">
-              地址
+              店家類型
             </label>
             <div className="relative">
-              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
                 type="text"
-                value={config.address}
-                onChange={(e) => setConfig(prev => ({ ...prev, address: e.target.value }))}
+                value={config.storeType}
+                onChange={(e) => setConfig(prev => ({ ...prev, storeType: e.target.value }))}
                 className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 outline-none focus:border-black focus:ring-1 focus:ring-black transition-all"
-                placeholder="請輸入地址"
+                placeholder="請輸入店家類型（如：餐廳、服飾店等）"
               />
             </div>
           </div>
@@ -146,19 +149,35 @@ export default function StoreSettingsPage() {
             </div>
           </div>
 
-          {/* 店家類型 */}
+          {/* 地址 */}
           <div>
             <label className="block text-sm font-medium text-gray-900 mb-2">
-              店家類型
+              地址
             </label>
             <div className="relative">
-              <Building2 className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
               <input
                 type="text"
-                value={config.storeType}
-                onChange={(e) => setConfig(prev => ({ ...prev, storeType: e.target.value }))}
+                value={config.address}
+                onChange={(e) => setConfig(prev => ({ ...prev, address: e.target.value }))}
                 className="w-full pl-10 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 outline-none focus:border-black focus:ring-1 focus:ring-black transition-all"
-                placeholder="請輸入店家類型（如：餐廳、服飾店等）"
+                placeholder="請輸入地址"
+              />
+            </div>
+          </div>
+
+          {/* Google Map 連結 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-900 mb-2">
+              Google Map 連結
+            </label>
+            <div className="relative">
+              <input
+                type="url"
+                value={config.googleMapLink}
+                onChange={(e) => setConfig(prev => ({ ...prev, googleMapLink: e.target.value }))}
+                className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 outline-none focus:border-black focus:ring-1 focus:ring-black transition-all"
+                placeholder="請輸入 Google Map 連結"
               />
             </div>
           </div>

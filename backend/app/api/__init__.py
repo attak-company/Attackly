@@ -1,7 +1,8 @@
 from fastapi import APIRouter
-from app.api import line, auth
+from app.api import line, auth, ai
 
 router = APIRouter()
 
 router.include_router(line.router, prefix="/line", tags=["line"])
 router.include_router(auth.router, prefix="/auth", tags=["auth"])
+router.include_router(ai.router, prefix="/ai", tags=["ai"])
