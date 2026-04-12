@@ -310,6 +310,14 @@ export default function LandingPage() {
 
 
 
+  const [isPricingSectionInView, setIsPricingSectionInView] = useState(false);
+
+
+
+  const pricingSectionRef = useRef<HTMLElement>(null);
+
+
+
   const sparkRef = useRef<HTMLDivElement>(null);
 
   const animationRef = useRef<Animation | null>(null);
@@ -351,6 +359,33 @@ export default function LandingPage() {
     return () => {
       if (industrySectionRef.current) {
         observer.unobserve(industrySectionRef.current);
+      }
+    };
+  }, []);
+
+
+
+  // Intersection Observer for Pricing Section
+  useEffect(() => {
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setIsPricingSectionInView(true);
+            observer.unobserve(entry.target);
+          }
+        });
+      },
+      { threshold: 0.2 }
+    );
+
+    if (pricingSectionRef.current) {
+      observer.observe(pricingSectionRef.current);
+    }
+
+    return () => {
+      if (pricingSectionRef.current) {
+        observer.unobserve(pricingSectionRef.current);
       }
     };
   }, []);
@@ -3609,7 +3644,7 @@ export default function LandingPage() {
 
 
 
-      <section id="pricing" className="py-32 px-6 bg-[#FAFAFA]">
+      <section ref={pricingSectionRef} id="pricing" className="py-32 px-6 bg-[#FAFAFA]">
 
 
 
@@ -3641,7 +3676,12 @@ export default function LandingPage() {
 
 
 
-            <div className="p-10 bg-[#FAFAFA] border-2 border-gray-200 rounded-[32px] hover:border-gray-300 transition-all group">
+            <motion.div
+              initial={{ opacity: 0, y: 40 }}
+              animate={isPricingSectionInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 40 }}
+              transition={{ duration: 0.6, delay: 0, ease: [0.4, 0, 0.2, 1] }}
+              className="p-10 bg-[#FAFAFA] border-2 border-gray-200 rounded-[32px] hover:border-gray-300 transition-all group"
+            >
 
 
 
@@ -3673,13 +3713,29 @@ export default function LandingPage() {
 
 
 
-                  <li key={i} className="flex items-center gap-3 font-bold text-gray-600">
+                  <li className="flex items-center gap-3 font-bold text-gray-600">
 
-
-
-                    <CheckCircle2 className="w-5 h-5 text-gray-300" /> {item}
-
-
+                    <svg
+                      className="w-5 h-5"
+                      viewBox="0 0 100 100"
+                      style={{
+                        mixBlendMode: 'screen',
+                        filter: 'drop-shadow(0 0 8px rgba(0, 0, 0, 0.6))'
+                      }}
+                    >
+                      <defs>
+                        <radialGradient id={`spark-gradient-basic-${i}`} cx="50%" cy="50%" r="50%">
+                          <stop offset="0%" stopColor="#FFFFFF" />
+                          <stop offset="20%" stopColor="#000000" />
+                          <stop offset="100%" stopColor="#000000" stopOpacity="0" />
+                        </radialGradient>
+                      </defs>
+                      <path
+                        d="M50 0 L55 40 L95 50 L55 60 L50 100 L45 60 L5 50 L45 40 Z"
+                        fill={`url(#spark-gradient-basic-${i})`}
+                      />
+                    </svg>
+                    {item}
 
                   </li>
 
@@ -3707,9 +3763,7 @@ export default function LandingPage() {
 
               <p className="text-sm text-gray-400 mt-4 text-center">註冊帳號即可永久使用。</p>
 
-
-
-            </div>
+            </motion.div>
 
 
 
@@ -3718,10 +3772,10 @@ export default function LandingPage() {
 
 
             <motion.div
-
-
-
-              className="p-10 bg-[#0A0A0A] text-white rounded-[32px] relative overflow-hidden border-2 border-red-500/30 shadow-[0_0_20px_rgba(255,0,0,0.2)]"
+              initial={{ opacity: 0, y: 40 }}
+              animate={isPricingSectionInView ? { opacity: 1, y: 0 } : { opacity: 0, y: 40 }}
+              transition={{ duration: 0.6, delay: 0.3, ease: [0.4, 0, 0.2, 1] }}
+              className="p-10 bg-[#0A0A0A] text-white rounded-[32px] relative overflow-hidden border-2 border-red-500/30 shadow-[0_0_20px_rgba(255,0,0,0.2)] animate-[neon-pulse_3s_ease-in-out_infinite]"
 
 
 
@@ -3729,11 +3783,11 @@ export default function LandingPage() {
 
 
 
-                boxShadow: "0 0 40px rgba(255, 0, 0, 0.4)",
+                boxShadow: "0 0 40px rgba(255, 0, 0, 0.4), 0 10px 30px rgba(0, 0, 0, 0.5)",
 
 
 
-                y: -8,
+                y: -10,
 
 
 
@@ -3743,19 +3797,11 @@ export default function LandingPage() {
 
               transition={{
 
-
-
                 duration: 0.3,
-
-
 
                 ease: [0.4, 0, 0.2, 1],
 
-
-
               }}
-
-
 
             >
 
@@ -3813,15 +3859,37 @@ export default function LandingPage() {
 
 
 
-                  <li key={i} className="flex items-center gap-3 font-bold text-gray-200">
+                  <motion.li
+                    key={i}
+                    initial={{ opacity: 0, scale: 0 }}
+                    animate={isPricingSectionInView ? { opacity: 1, scale: 1 } : { opacity: 0, scale: 0 }}
+                    transition={{ duration: 0.4, delay: 1.1 + i * 0.15, ease: [0.4, 0, 0.2, 1] }}
+                    className="flex items-center gap-3 font-bold text-gray-200"
+                  >
 
+                    <svg
+                      className="w-5 h-5"
+                      viewBox="0 0 100 100"
+                      style={{
+                        mixBlendMode: 'screen',
+                        filter: 'drop-shadow(0 0 8px rgba(255, 0, 0, 0.8))'
+                      }}
+                    >
+                      <defs>
+                        <radialGradient id={`spark-gradient-pro-${i}`} cx="50%" cy="50%" r="50%">
+                          <stop offset="0%" stopColor="#FFFFFF" />
+                          <stop offset="20%" stopColor="#FF0000" />
+                          <stop offset="100%" stopColor="#FF0000" stopOpacity="0" />
+                        </radialGradient>
+                      </defs>
+                      <path
+                        d="M50 0 L55 40 L95 50 L55 60 L50 100 L45 60 L5 50 L45 40 Z"
+                        fill={`url(#spark-gradient-pro-${i})`}
+                      />
+                    </svg>
+                    {item}
 
-
-                    <CheckCircle2 className="w-5 h-5 text-red-400" /> {item}
-
-
-
-                  </li>
+                  </motion.li>
 
 
 
@@ -3833,7 +3901,7 @@ export default function LandingPage() {
 
 
 
-              <Link href="/register" className="block w-full py-4 bg-red-500 text-white text-center rounded-2xl font-black hover:bg-red-600 hover:-translate-y-1 transition-all">
+              <Link href="/register" className="block w-full py-4 bg-red-500 text-white text-center rounded-2xl font-black hover:bg-[#FF0000] hover:-translate-y-1 transition-all">
 
 
 
