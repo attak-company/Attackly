@@ -1,26 +1,275 @@
 @import "tailwindcss";
 
+
+
 :root {
+
   --background: #ffffff;
+
   --foreground: #171717;
+
 }
+
+
 
 @theme inline {
+
   --color-background: var(--background);
+
   --color-foreground: var(--foreground);
+
   --font-sans: var(--font-geist-sans);
+
   --font-mono: var(--font-geist-mono);
+
 }
 
+
+
 @media (prefers-color-scheme: dark) {
+
   :root {
+
     --background: #0a0a0a;
+
     --foreground: #ededed;
+
+  }
+
+}
+
+
+
+body {
+
+  background: var(--background);
+
+  color: var(--foreground);
+
+  font-family: Arial, Helvetica, sans-serif;
+
+  overflow-x: hidden;
+
+}
+
+
+
+/* Custom scrollbar for dashboard main content */
+
+main::-webkit-scrollbar {
+
+  width: 6px;
+
+}
+
+
+
+main::-webkit-scrollbar-track {
+
+  background: transparent;
+
+}
+
+
+
+main::-webkit-scrollbar-thumb {
+
+  background-color: #9ca3af;
+
+  border-radius: 10px;
+
+}
+
+
+
+main::-webkit-scrollbar-thumb:hover {
+
+  background-color: #6b7280;
+
+}
+
+
+
+/* Firefox scrollbar */
+
+main {
+
+  scrollbar-width: thin;
+
+  scrollbar-color: #9ca3af transparent;
+
+}
+
+
+
+/* Hide scrollbar for specific elements */
+
+.scrollbar-hide::-webkit-scrollbar {
+
+  display: none;
+
+}
+
+
+
+.scrollbar-hide {
+
+  -ms-overflow-style: none;  /* IE and Edge */
+
+  scrollbar-width: none;  /* Firefox */
+
+}
+
+
+
+@keyframes random-float {
+  0% {
+    transform: translate(0, 0);
+  }
+  10% {
+    transform: translate(1.5px, -0.5px);
+  }
+  20% {
+    transform: translate(-0.5px, 1.5px);
+  }
+  30% {
+    transform: translate(-1.5px, -1.5px);
+  }
+  40% {
+    transform: translate(0.5px, 0.5px);
+  }
+  50% {
+    transform: translate(2px, -1px);
+  }
+  60% {
+    transform: translate(-1px, 0.5px);
+  }
+  70% {
+    transform: translate(-0.5px, -0.5px);
+  }
+  80% {
+    transform: translate(1.5px, 1.5px);
+  }
+  90% {
+    transform: translate(-2px, 0.5px);
+  }
+  100% {
+    transform: translate(0, 0);
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+
+
+@keyframes laser-point {
+
+  0% {
+
+    left: 0%;
+  }
+
+  100% {
+
+    left: 100%;
+  }
+
+}
+
+
+
+@keyframes pulse-breath {
+
+  0%, 100% {
+
+    opacity: 0.8;
+
+    transform: scale(0.95);
+
+  }
+
+  50% {
+
+    opacity: 1;
+
+    transform: scale(1.05);
+
+  }
+
+
+
+}
+
+
+
+@keyframes spin-slow {
+
+  0% {
+
+    transform: rotate(0deg);
+
+  }
+
+  100% {
+
+    transform: rotate(360deg);
+
+  }
+
+}
+
+
+
+@keyframes divider-breath {
+
+  0%, 100% {
+
+    opacity: 0.8;
+    box-shadow: 0 0 10px rgba(255, 0, 0, 0.5);
+
+  }
+
+  50% {
+
+    opacity: 1;
+    box-shadow: 0 0 20px rgba(255, 0, 0, 0.8);
+
+  }
+
+}
+
+
+
+@keyframes floating-card {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes neon-floating {
+  0%, 100% {
+    transform: translateY(0px);
+    box-shadow: 0 0 15px rgba(255, 0, 0, 0.3), 0 0 25px rgba(255, 0, 0, 0.2);
+  }
+  50% {
+    transform: translateY(-5px);
+    box-shadow: 0 0 25px rgba(255, 0, 0, 0.7), 0 0 40px rgba(255, 0, 0, 0.5);
+  }
+}
+
+@keyframes neon-pulse {
+
+  0%, 100% {
+
+    box-shadow: 0 0 15px rgba(255, 0, 0, 0.3), 0 0 25px rgba(255, 0, 0, 0.2);
+
+  }
+
+  50% {
+
+    box-shadow: 0 0 25px rgba(255, 0, 0, 0.7), 0 0 40px rgba(255, 0, 0, 0.5);
+
+  }
+
 }

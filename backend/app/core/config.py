@@ -17,6 +17,12 @@ class Settings(BaseSettings):
     SMTP_PASSWORD: str = os.getenv("SMTP_PASSWORD", "")
     BASE_URL: str = os.getenv("BASE_URL", "http://localhost:8000")
     LOGO_URL: str = os.getenv("LOGO_URL", "http://localhost:8000/static/Logo.png")
+    
+    # 藍星金流配置
+    NEWEBPAY_MERCHANT_ID: str = os.getenv("NEWEBPAY_MERCHANT_ID", "")
+    NEWEBPAY_HASH_KEY: str = os.getenv("NEWEBPAY_HASH_KEY", "")
+    NEWEBPAY_HASH_IV: str = os.getenv("NEWEBPAY_HASH_IV", "")
+    NEWEBPAY_ENV: str = os.getenv("NEWEBPAY_ENV", "test")  # test 或 production
 
     class Config:
         env_file = ".env"
