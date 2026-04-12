@@ -36,8 +36,6 @@ const staticText1 = "讓 AI 幫您";
 
 const staticText2 = "搞定所有";
 
-
-
 // 行業數據
 
 type IndustryData = {
@@ -135,7 +133,6 @@ function NumberTicker({ value, duration = 2 }: { value: number | string; duratio
   const [isVisible, setIsVisible] = useState(false);
 
   const ref = useRef<HTMLDivElement>(null);
-
 
 
   useEffect(() => {
@@ -271,8 +268,6 @@ function TypewriterText({ text, speed = 0.05 }: { text: string; speed?: number }
 
 
 export default function LandingPage() {
-
-
 
   const [index, setIndex] = useState(0);
 
