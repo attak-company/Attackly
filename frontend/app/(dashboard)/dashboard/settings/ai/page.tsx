@@ -4,22 +4,29 @@ import { useState, useEffect } from "react";
 import { Save, Bot, Plus, X, Check } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 
-interface Rule {
-  condition: string;
-  action: string;
-}
-
 export default function AISettingsPage() {
   const [config, setConfig] = useState<{
     tone: string;
     customTone?: string;
     sampleText?: string;
-    rules: Rule[];
+    rules: string[];
+    hardcodedRules: {
+      noHallucination: boolean;
+      driveBooking: boolean;
+      comfortEmotions: boolean;
+      prioritizeStore: boolean;
+    };
   }>({
     tone: "friendly",
     customTone: "",
     sampleText: "",
-    rules: [{ condition: "", action: "" }],
+    rules: [""],
+    hardcodedRules: {
+      noHallucination: false,
+      driveBooking: false,
+      comfortEmotions: false,
+      prioritizeStore: false
+    }
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -42,7 +49,13 @@ export default function AISettingsPage() {
               tone: userData.ai_settings.tone || 'friendly',
               customTone: userData.ai_settings.customTone || '',
               sampleText: userData.ai_settings.sampleText || '',
-              rules: userData.ai_settings.rules || [{ condition: "", action: "" }]
+              rules: userData.ai_settings.rules || [""],
+              hardcodedRules: userData.ai_settings.hardcodedRules || {
+                noHallucination: false,
+                driveBooking: false,
+                comfortEmotions: false,
+                prioritizeStore: false
+              }
             });
           }
         }
@@ -114,23 +127,62 @@ export default function AISettingsPage() {
               </div>
             </div>
             <div>
-              <label className="block text-sm font-medium text-gray-900 mb-1">回覆規則</label>
+              <label className="block text-sm font-medium text-gray-900 mb-3">硬性規則</label>
+              <div className="space-y-2 mb-4">
+                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <span className="text-sm text-gray-700">無法確定就不要亂編造</span>
+                  <button
+                    onClick={() => setConfig({ ...config, hardcodedRules: { ...config.hardcodedRules, noHallucination: !config.hardcodedRules.noHallucination } })}
+                    className={`w-12 h-6 rounded-full transition-colors ${config.hardcodedRules.noHallucination ? 'bg-black' : 'bg-gray-300'}`}
+                  >
+                    <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${config.hardcodedRules.noHallucination ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <span className="text-sm text-gray-700">對話導向成交與預約</span>
+                  <button
+                    onClick={() => setConfig({ ...config, hardcodedRules: { ...config.hardcodedRules, driveBooking: !config.hardcodedRules.driveBooking } })}
+                    className={`w-12 h-6 rounded-full transition-colors ${config.hardcodedRules.driveBooking ? 'bg-black' : 'bg-gray-300'}`}
+                  >
+                    <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${config.hardcodedRules.driveBooking ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <span className="text-sm text-gray-700">遇到負面情緒安撫優先</span>
+                  <button
+                    onClick={() => setConfig({ ...config, hardcodedRules: { ...config.hardcodedRules, comfortEmotions: !config.hardcodedRules.comfortEmotions } })}
+                    className={`w-12 h-6 rounded-full transition-colors ${config.hardcodedRules.comfortEmotions ? 'bg-black' : 'bg-gray-300'}`}
+                  >
+                    <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${config.hardcodedRules.comfortEmotions ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+                <div className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
+                  <span className="text-sm text-gray-700">回答以店家利益優先</span>
+                  <button
+                    onClick={() => setConfig({ ...config, hardcodedRules: { ...config.hardcodedRules, prioritizeStore: !config.hardcodedRules.prioritizeStore } })}
+                    className={`w-12 h-6 rounded-full transition-colors ${config.hardcodedRules.prioritizeStore ? 'bg-black' : 'bg-gray-300'}`}
+                  >
+                    <div className={`w-5 h-5 bg-white rounded-full shadow transition-transform ${config.hardcodedRules.prioritizeStore ? 'translate-x-6' : 'translate-x-0.5'}`} />
+                  </button>
+                </div>
+              </div>
+
+              <label className="block text-sm font-medium text-gray-900 mb-1">自訂規則</label>
               <div className="space-y-3">
                 {config.rules.map((rule, index) => (
                   <div key={index} className="bg-gray-50 p-4 rounded-lg space-y-3">
                     <div className="flex items-start gap-2">
                       <div className="flex-1">
-                        <label className="block text-xs text-gray-600 mb-1">條件</label>
-                        <input
-                          type="text"
-                          value={rule.condition}
+                        <textarea
+                          value={rule}
                           onChange={(e) => {
                             const newRules = [...config.rules];
-                            newRules[index] = { ...rule, condition: e.target.value };
+                            newRules[index] = e.target.value;
                             setConfig({ ...config, rules: newRules });
                           }}
-                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-black focus:border-black text-gray-900 text-sm"
-                          placeholder="例如：使用者說「你好」或「哈囉」"
+                          className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-black focus:border-black text-gray-900 text-sm resize-none"
+                          rows={2}
+                          placeholder="例如：不知道就不要亂講"
                         />
                       </div>
                       <button
@@ -138,29 +190,15 @@ export default function AISettingsPage() {
                           const newRules = config.rules.filter((_, i) => i !== index);
                           setConfig({ ...config, rules: newRules });
                         }}
-                        className="p-2 text-red-500 hover:text-red-700 transition-colors mt-4"
+                        className="p-2 text-red-500 hover:text-red-700 transition-colors"
                       >
                         <X className="w-5 h-5" />
                       </button>
                     </div>
-                    <div>
-                      <label className="block text-xs text-gray-600 mb-1">違反時處理</label>
-                      <input
-                        type="text"
-                        value={rule.action}
-                        onChange={(e) => {
-                          const newRules = [...config.rules];
-                          newRules[index] = { ...rule, action: e.target.value };
-                          setConfig({ ...config, rules: newRules });
-                        }}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-black focus:border-black text-gray-900 text-sm"
-                        placeholder="例如：請生氣地回覆「請不要講你好，直接說出您的需求」"
-                      />
-                    </div>
                   </div>
                 ))}
                 <button
-                  onClick={() => setConfig({ ...config, rules: [...config.rules, { condition: "", action: "" }] })}
+                  onClick={() => setConfig({ ...config, rules: [...config.rules, ""] })}
                   className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 hover:text-gray-900 transition-colors"
                 >
                   <Plus className="w-4 h-4" />
@@ -182,7 +220,7 @@ export default function AISettingsPage() {
                 }
 
                 // 過濾掉空的規則
-                const filteredRules = config.rules.filter(rule => rule.condition.trim() || rule.action.trim());
+                const filteredRules = config.rules.filter(rule => rule.trim());
 
                 const { error } = await supabase
                   .from('users')
@@ -191,7 +229,8 @@ export default function AISettingsPage() {
                       tone: config.tone,
                       customTone: config.tone === 'custom' ? config.customTone : undefined,
                       sampleText: config.tone === 'sample' ? config.sampleText : undefined,
-                      rules: filteredRules
+                      rules: filteredRules,
+                      hardcodedRules: config.hardcodedRules
                     }
                   })
                   .eq('id', user.id);

@@ -1,102 +1,253 @@
 "use client";
 
-import { useState } from "react";
-import { Plus, Search, Upload, FileText, Trash2, Edit2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Plus, Trash2, Save, X } from "lucide-react";
+
+interface FAQItem {
+  id: string;
+  question: string;
+  answer: string;
+  category: string;
+}
 
 export default function FAQPage() {
-  const [faqs, setFaqs] = useState([
-    { id: 1, question: "預約取消政策？", answer: "需於 24 小時前告知，否則需收取 30% 手續費。" },
-    { id: 2, question: "付款方式有哪些？", answer: "支援 現金、Line Pay、信用卡。" },
-  ]);
+  const [faqs, setFaqs] = useState<FAQItem[]>([]);
+  const [newQuestion, setNewQuestion] = useState("");
+  const [newAnswer, setNewAnswer] = useState("");
+  const [newCategory, setNewCategory] = useState("專業知識詢問");
+  const [selectedCategory, setSelectedCategory] = useState("全部");
+  const [isAdding, setIsAdding] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [success, setSuccess] = useState<string | null>(null);
+
+  const categories = ["專業知識詢問", "產品資訊詢問", "店家資料詢問"];
+
+  const userId = "086965d1-4fb3-48e0-a560-643d049993d9"; // This should come from auth
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+
+  const fetchFAQs = async () => {
+    try {
+      setLoading(true);
+      const categoryParam = selectedCategory === "全部" ? "" : `?category=${encodeURIComponent(selectedCategory)}`;
+      const response = await fetch(`${baseUrl}/api/v1/faq/${userId}${categoryParam}`);
+      if (!response.ok) throw new Error("Failed to fetch FAQs");
+      const data = await response.json();
+      setFaqs(data);
+      setError(null);
+    } catch (err) {
+      setError("無法載入 FAQ 資料");
+      console.error(err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchFAQs();
+  }, [selectedCategory]);
+
+  const handleAddFAQ = async () => {
+    if (!newQuestion.trim() || !newAnswer.trim()) {
+      setError("請填寫問題和答案");
+      return;
+    }
+
+    try {
+      const response = await fetch(`${baseUrl}/api/v1/faq/${userId}`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          question: newQuestion,
+          answer: newAnswer,
+          category: newCategory,
+        }),
+      });
+
+      if (!response.ok) throw new Error("Failed to add FAQ");
+
+      setSuccess("FAQ 新增成功");
+      setNewQuestion("");
+      setNewAnswer("");
+      setNewCategory("專業知識詢問");
+      setIsAdding(false);
+      fetchFAQs();
+
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError("新增 FAQ 失敗");
+      console.error(err);
+    }
+  };
+
+  const handleDeleteFAQ = async (id: string) => {
+    if (!confirm("確定要刪除這個 FAQ 嗎？")) return;
+
+    try {
+      const response = await fetch(`${baseUrl}/api/v1/faq/${userId}?faq_id=${id}`, {
+        method: "DELETE",
+      });
+
+      if (!response.ok) throw new Error("Failed to delete FAQ");
+
+      setSuccess("FAQ 刪除成功");
+      fetchFAQs();
+
+      setTimeout(() => setSuccess(null), 3000);
+    } catch (err) {
+      setError("刪除 FAQ 失敗");
+      console.error(err);
+    }
+  };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight">FAQ 知識庫 (RAG)</h2>
-          <p className="text-gray-500 mt-2">上傳資料讓 AI 學習您的業務內容，實現自動問答。</p>
-        </div>
-        <div className="flex space-x-3">
-          <button className="flex items-center px-4 py-2 border border-gray-300 bg-white text-gray-700 rounded-lg hover:bg-gray-50 transition-colors">
-            <Upload className="w-4 h-4 mr-2" />
-            批次上傳 (PDF/CSV)
-          </button>
-          <button className="flex items-center px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-colors">
-            <Plus className="w-4 h-4 mr-2" />
-            新增 FAQ
-          </button>
-        </div>
-      </div>
-
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
-        <div className="p-4 border-b flex items-center bg-gray-50/50">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-            <input
-              type="text"
-              placeholder="搜尋關鍵字..."
-              className="w-full pl-10 pr-4 py-2 bg-white border border-gray-200 rounded-lg text-sm"
-            />
+    <div className="p-8">
+      <div className="max-w-4xl mx-auto">
+        <div className="flex justify-between items-center mb-6">
+          <h1 className="text-3xl font-bold text-gray-900">知識庫管理</h1>
+          <div className="flex items-center gap-4">
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900"
+            >
+              <option value="全部">全部類別</option>
+              {categories.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
+            </select>
+            {!isAdding && (
+              <button
+                onClick={() => setIsAdding(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+              >
+                <Plus className="w-4 h-4" />
+                新增 FAQ
+              </button>
+            )}
           </div>
         </div>
 
-        <div className="divide-y divide-gray-100">
-          {faqs.map((faq) => (
-            <div key={faq.id} className="p-6 hover:bg-gray-50/50 transition-colors group">
-              <div className="flex items-start justify-between">
-                <div className="flex items-start space-x-4">
-                  <div className="mt-1 p-2 bg-blue-100 rounded-lg">
-                    <FileText className="w-4 h-4 text-blue-600" />
+        {error && (
+          <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded mb-4">
+            {error}
+          </div>
+        )}
+
+        {success && (
+          <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded mb-4">
+            {success}
+          </div>
+        )}
+
+        {isAdding && (
+          <div className="bg-white border border-gray-200 rounded-lg p-6 mb-6 shadow-sm">
+            <h2 className="text-lg font-semibold mb-4 text-gray-900">新增 FAQ</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-900 mb-2">
+                  類別
+                </label>
+                <select
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value)}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 placeholder-gray-500"
+                >
+                  {categories.map((cat) => (
+                    <option key={cat} value={cat}>
+                      {cat}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-900 mb-2">
+                  問題
+                </label>
+                <input
+                  type="text"
+                  value={newQuestion}
+                  onChange={(e) => setNewQuestion(e.target.value)}
+                  placeholder="輸入問題..."
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 placeholder-gray-500"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-900 mb-2">
+                  答案
+                </label>
+                <textarea
+                  value={newAnswer}
+                  onChange={(e) => setNewAnswer(e.target.value)}
+                  placeholder="輸入答案..."
+                  rows={4}
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 text-gray-900 placeholder-gray-500"
+                />
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={handleAddFAQ}
+                  className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+                >
+                  <Save className="w-4 h-4" />
+                  儲存
+                </button>
+                <button
+                  onClick={() => {
+                    setIsAdding(false);
+                    setNewQuestion("");
+                    setNewAnswer("");
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-900 rounded-lg hover:bg-gray-50 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                  取消
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {loading ? (
+          <div className="text-center py-8 text-gray-700">載入中...</div>
+        ) : faqs.length === 0 ? (
+          <div className="text-center py-12 text-gray-700">
+            <p>尚無 FAQ 資料</p>
+            <p className="text-sm mt-2">點擊「新增 FAQ」開始建立知識庫</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {faqs.map((faq) => (
+              <div
+                key={faq.id}
+                className="bg-white border border-gray-200 rounded-lg p-6 shadow-sm hover:shadow-md transition-shadow"
+              >
+                <div className="flex justify-between items-start gap-4">
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-700 rounded">
+                        {faq.category}
+                      </span>
+                      <h3 className="font-semibold text-lg">{faq.question}</h3>
+                    </div>
+                    <p className="text-gray-800 whitespace-pre-wrap">{faq.answer}</p>
                   </div>
-                  <div>
-                    <h4 className="font-bold text-gray-900 mb-1">{faq.question}</h4>
-                    <p className="text-sm text-gray-600 leading-relaxed">{faq.answer}</p>
-                  </div>
-                </div>
-                <div className="flex space-x-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button className="p-2 text-gray-400 hover:text-black hover:bg-black/10 rounded-lg transition-colors">
-                    <Edit2 className="w-4 h-4" />
-                  </button>
-                  <button className="p-2 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors">
+                  <button
+                    onClick={() => handleDeleteFAQ(faq.id)}
+                    className="flex-shrink-0 p-2 text-red-600 hover:text-red-700 hover:bg-red-50 rounded-lg transition-colors"
+                  >
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="bg-blue-50 border border-blue-100 rounded-xl p-6 flex items-center">
-        <div className="p-3 bg-blue-100 rounded-full mr-4">
-          <BotIcon className="w-6 h-6 text-blue-600" />
-        </div>
-        <div>
-          <h4 className="font-bold text-blue-900">AI 正在學習您的資料...</h4>
-          <p className="text-sm text-blue-700">已有 12 條 FAQ 資料被整合進 AI 核心，目前的覆蓋率為 85%。</p>
-        </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
-  );
-}
-
-function BotIcon({ className }: { className?: string }) {
-  return (
-    <svg 
-      className={className} 
-      viewBox="0 0 24 24" 
-      fill="none" 
-      stroke="currentColor" 
-      strokeWidth="2" 
-      strokeLinecap="round" 
-      strokeLinejoin="round"
-    >
-      <path d="M12 8V4H8" />
-      <rect width="16" height="12" x="4" y="8" rx="2" />
-      <path d="M2 14h2" />
-      <path d="M20 14h2" />
-      <path d="M15 13v2" />
-      <path d="M9 13v2" />
-    </svg>
   );
 }

@@ -70,7 +70,7 @@ async def get_user_line_config(user_id: str):
 async def get_user_ai_settings(user_id: str):
     """從資料庫獲取用戶的 AI 設定和店家資料"""
     try:
-        response = supabase.table('users').select('ai_settings, store_name, store_address, store_google_map_link, store_phone, store_type').eq('id', user_id).execute()
+        response = supabase.table('users').select('ai_settings, ai_enabled, store_name, store_address, store_google_map_link, store_phone, store_type, store_description, store_location_image').eq('id', user_id).execute()
 
         if response.data:
             user_data = response.data[0]
@@ -80,11 +80,14 @@ async def get_user_ai_settings(user_id: str):
                 'customTone': ai_settings.get('customTone', ''),
                 'sampleText': ai_settings.get('sampleText', ''),
                 'rules': ai_settings.get('rules', []),
+                'ai_enabled': user_data.get('ai_enabled', True),
                 'store_name': user_data.get('store_name', ''),
                 'store_address': user_data.get('store_address', ''),
                 'google_map_link': user_data.get('store_google_map_link', ''),
                 'store_phone': user_data.get('store_phone', ''),
-                'store_type': user_data.get('store_type', '')
+                'store_type': user_data.get('store_type', ''),
+                'store_description': user_data.get('store_description', ''),
+                'store_location_image': user_data.get('store_location_image', '')
             }
         else:
             # 預設設定
@@ -93,11 +96,14 @@ async def get_user_ai_settings(user_id: str):
                 'customTone': '',
                 'sampleText': '',
                 'rules': [],
+                'ai_enabled': True,
                 'store_name': '',
                 'store_address': '',
                 'google_map_link': '',
                 'store_phone': '',
-                'store_type': ''
+                'store_type': '',
+                'store_description': '',
+                'store_location_image': ''
             }
     except Exception as e:
         print(f"Error fetching user AI settings: {e}")
@@ -107,11 +113,14 @@ async def get_user_ai_settings(user_id: str):
             'customTone': '',
             'sampleText': '',
             'rules': [],
+            'ai_enabled': True,
             'store_name': '',
             'store_address': '',
             'google_map_link': '',
             'store_phone': '',
-            'store_type': ''
+            'store_type': '',
+            'store_description': '',
+            'store_location_image': ''
         }
 
 @router.post("/{user_id}")
@@ -155,10 +164,69 @@ async def process_line_message(event: MessageEvent, user_id: str, line_bot_api: 
 
     # 獲取用戶的 AI 設定和店家資料
     ai_settings = await get_user_ai_settings(user_id)
-    print(f"AI settings: tone={ai_settings['tone']}, rules_count={len(ai_settings['rules'])}")
+    
+    # Check if AI is enabled
+    if ai_settings.get('ai_enabled') is False:
+        print(f"AI is disabled for user {user_id}, skipping AI processing")
+        # Save user message to database but don't generate AI response
+        try:
+            display_name = None
+            picture_url = None
+            try:
+                profile = line_bot_api.get_profile(line_user_id)
+                display_name = profile.display_name
+                picture_url = profile.picture_url
+            except Exception as e:
+                print(f"Error getting user profile: {e}")
 
-    # 構建 system prompt
-    system_prompt = "你是『數位店長』AI客服。"
+            existing_conversation = supabase.table('conversations').select('*').eq('line_user_id', line_user_id).eq('user_id', user_id).execute()
+
+            conversation_id = None
+            if existing_conversation.data:
+                conversation_id = existing_conversation.data[0]['id']
+                update_data = {
+                    'last_message': text,
+                    'timestamp': 'now()',
+                    'unread': True
+                }
+                if display_name:
+                    update_data['display_name'] = display_name
+                if picture_url:
+                    update_data['picture_url'] = picture_url
+
+                supabase.table('conversations').update(update_data).eq('id', conversation_id).execute()
+            else:
+                new_conversation_data = {
+                    'id': str(uuid.uuid4()),
+                    'user_id': user_id,
+                    'user_name': display_name if display_name else f'LINE User {line_user_id[:8]}',
+                    'line_user_id': line_user_id,
+                    'last_message': text,
+                    'unread': True
+                }
+                if display_name:
+                    new_conversation_data['display_name'] = display_name
+                if picture_url:
+                    new_conversation_data['picture_url'] = picture_url
+
+                new_conversation = supabase.table('conversations').insert(new_conversation_data).execute()
+                conversation_id = new_conversation.data[0]['id']
+
+            supabase.table('messages').insert({
+                'conversation_id': conversation_id,
+                'role': 'user',
+                'content': text,
+                'timestamp': 'now()'
+            }).execute()
+
+            print(f"User message saved to database (AI disabled): {conversation_id}")
+        except Exception as e:
+            print(f"Error saving user message: {e}")
+
+        return {"status": "ok"}
+    
+    # Build system prompt with store information
+    system_prompt = f"""你是『數位店長』AI客服。"""
 
     # 添加店家資料
     if ai_settings['store_name']:
@@ -171,6 +239,8 @@ async def process_line_message(event: MessageEvent, user_id: str, line_bot_api: 
         system_prompt += f"\n店家電話：{ai_settings['store_phone']}"
     if ai_settings['store_type']:
         system_prompt += f"\n店家類型：{ai_settings['store_type']}"
+    if ai_settings['store_description']:
+        system_prompt += f"\n店家簡介：{ai_settings['store_description']}"
 
     # 添加語氣設定
     tone_map = {
@@ -193,13 +263,26 @@ async def process_line_message(event: MessageEvent, user_id: str, line_bot_api: 
         tone_description = tone_map.get(ai_settings['tone'], '親切友善')
         system_prompt += f"\n請使用{tone_description}的語氣回覆。"
 
-    # 添加規則
-    if ai_settings['rules']:
-        system_prompt += "\n請遵守以下回覆規則（在回覆前先檢查使用者訊息是否符合條件）："
-        for rule in ai_settings['rules']:
-            if rule.get('condition') and rule.get('action'):
-                system_prompt += f"\n- 條件：{rule['condition']}，違反時：{rule['action']}"
-        system_prompt += "\n如果使用者訊息符合上述任何條件，請按照違反時的處理方式回應。"
+    # 添加硬性規則
+    hardcoded_rules = ai_settings.get('hardcodedRules', {})
+    if hardcoded_rules:
+        enabled_hardcoded_rules = []
+        if hardcoded_rules.get('noHallucination'):
+            enabled_hardcoded_rules.append("無法確定就不要亂編造")
+        if hardcoded_rules.get('driveBooking'):
+            enabled_hardcoded_rules.append("對話導向成交與預約")
+        if hardcoded_rules.get('comfortEmotions'):
+            enabled_hardcoded_rules.append("遇到負面情緒安撫優先")
+        if hardcoded_rules.get('prioritizeStore'):
+            enabled_hardcoded_rules.append("回答以店家利益優先")
+        
+        if enabled_hardcoded_rules:
+            system_prompt += f"\n\n【硬性規則】\n" + "\n".join([f"- {rule}" for rule in enabled_hardcoded_rules])
+
+    # 添加自訂規則
+    if ai_settings.get('rules'):
+        rules_text = "\n".join([f"規則{i+1}：{rule}" for i, rule in enumerate(ai_settings['rules']) if rule.strip()])
+        system_prompt += f"\n\n【自訂規則】\n{rules_text}"
 
     print(f"System prompt: {system_prompt[:200]}...")
 
@@ -291,16 +374,24 @@ async def process_line_message(event: MessageEvent, user_id: str, line_bot_api: 
     except Exception as e:
         print(f"Error saving user message to database: {e}")
 
-    # 回覆用戶
+    # 回覆用戶 - 使用 AI 生成的回應
     # 檢測是否為地址相關查詢
     address_keywords = ['地址', '在哪裡', '位置', '怎麼去', '如何到達', '地址是什麼', '店址', '位置在哪']
     is_address_query = any(keyword in text for keyword in address_keywords)
 
     if is_address_query and ai_settings.get('store_address') and ai_settings.get('google_map_link'):
-        # 發送地址和 Google Map 連結
-        address_message = f"我們的地址是：{ai_settings['store_address']}"
+        # 發送 AI 回應、店家圖片和 Google Map 按鈕
+        messages = [TextSendMessage(text=ai_response)]
         
-        # 建立 Flex Message 包含 Google Map 按鈕
+        # 如果有店家位置圖片，加入圖片訊息
+        if ai_settings.get('store_location_image'):
+            from linebot.models import ImageSendMessage
+            messages.append(ImageSendMessage(
+                original_content_url=ai_settings['store_location_image'],
+                preview_image_url=ai_settings['store_location_image']
+            ))
+        
+        # 加入 Google Map 按鈕
         flex_message = FlexSendMessage(
             alt_text='店家地址',
             contents={
@@ -345,13 +436,11 @@ async def process_line_message(event: MessageEvent, user_id: str, line_bot_api: 
                 }
             }
         )
+        messages.append(flex_message)
 
         line_bot_api.reply_message(
             event.reply_token,
-            [
-                TextSendMessage(text=address_message),
-                flex_message
-            ]
+            messages
         )
     else:
         line_bot_api.reply_message(
@@ -366,11 +455,8 @@ async def process_line_message(event: MessageEvent, user_id: str, line_bot_api: 
             import asyncio
             await asyncio.sleep(0.5)
             
-            # 如果是地址查詢，儲存地址訊息
-            if is_address_query and ai_settings.get('store_address'):
-                response_content = f"我們的地址是：{ai_settings['store_address']}\nGoogle Map 連結：{ai_settings.get('google_map_link', '')}"
-            else:
-                response_content = ai_response
+            # 儲存 AI 回應
+            response_content = ai_response
             
             supabase.table('messages').insert({
                 'conversation_id': conversation_id,

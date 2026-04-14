@@ -12,10 +12,13 @@ export default function StoreSettingsPage() {
     googleMapLink: "",
     phone: "",
     storeType: "",
+    storeDescription: "",
+    storeLocationImage: "",
   });
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [uploading, setUploading] = useState(false);
   const supabase = createClient();
 
   useEffect(() => {
@@ -26,7 +29,7 @@ export default function StoreSettingsPage() {
           // 從資料庫讀取店家資料
           const { data: userData, error } = await supabase
             .from('users')
-            .select('store_name, store_address, store_google_map_link, store_phone, store_type')
+            .select('store_name, store_address, store_google_map_link, store_phone, store_type, store_description, store_location_image')
             .eq('id', user.id)
             .single();
           
@@ -36,7 +39,9 @@ export default function StoreSettingsPage() {
               address: userData.store_address || '',
               googleMapLink: userData.store_google_map_link || '',
               phone: userData.store_phone || '',
-              storeType: userData.store_type || ''
+              storeType: userData.store_type || '',
+              storeDescription: userData.store_description || '',
+              storeLocationImage: userData.store_location_image || ''
             });
           }
         }
@@ -49,6 +54,38 @@ export default function StoreSettingsPage() {
 
     fetchUserData();
   }, [supabase]);
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploading(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${user.id}-${Date.now()}.${fileExt}`;
+      const filePath = `store-locations/${fileName}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('store-images')
+        .upload(filePath, file);
+
+      if (uploadError) throw uploadError;
+
+      const { data: { publicUrl } } = supabase.storage
+        .from('store-images')
+        .getPublicUrl(filePath);
+
+      setConfig(prev => ({ ...prev, storeLocationImage: publicUrl }));
+    } catch (error: any) {
+      console.error("Error uploading image:", error);
+      alert("圖片上傳失敗：" + error.message);
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -68,7 +105,9 @@ export default function StoreSettingsPage() {
           store_address: config.address,
           store_google_map_link: config.googleMapLink,
           store_phone: config.phone,
-          store_type: config.storeType
+          store_type: config.storeType,
+          store_description: config.storeDescription,
+          store_location_image: config.storeLocationImage
         })
         .eq('id', user.id);
 
@@ -132,6 +171,20 @@ export default function StoreSettingsPage() {
             </div>
           </div>
 
+          {/* 店家簡介 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-900 mb-2">
+              店家簡介
+            </label>
+            <textarea
+              value={config.storeDescription}
+              onChange={(e) => setConfig(prev => ({ ...prev, storeDescription: e.target.value }))}
+              className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 outline-none focus:border-black focus:ring-1 focus:ring-black transition-all resize-none"
+              placeholder="請輸入店家簡介"
+              rows={4}
+            />
+          </div>
+
           {/* 電話 */}
           <div>
             <label className="block text-sm font-medium text-gray-900 mb-2">
@@ -179,6 +232,47 @@ export default function StoreSettingsPage() {
                 className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 outline-none focus:border-black focus:ring-1 focus:ring-black transition-all"
                 placeholder="請輸入 Google Map 連結"
               />
+            </div>
+          </div>
+
+          {/* 店家位置圖片 */}
+          <div>
+            <label className="block text-sm font-medium text-gray-900 mb-2">
+              店家位置圖片
+            </label>
+            <div className="space-y-3">
+              {config.storeLocationImage && (
+                <div className="relative">
+                  <img
+                    src={config.storeLocationImage}
+                    alt="店家位置"
+                    className="w-full h-48 object-cover rounded-lg border border-gray-200"
+                  />
+                  <button
+                    onClick={() => setConfig(prev => ({ ...prev, storeLocationImage: '' }))}
+                    className="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-md hover:bg-red-600 transition-colors"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
+                </div>
+              )}
+              <div className="flex items-center gap-3">
+                <input
+                  type="file"
+                  accept="image/*"
+                  onChange={handleImageUpload}
+                  disabled={uploading}
+                  className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 outline-none focus:border-black focus:ring-1 focus:ring-black transition-all file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-black file:text-white file:text-sm file:cursor-pointer disabled:opacity-50"
+                />
+                {uploading && (
+                  <div className="w-5 h-5 border-2 border-black border-t-transparent rounded-full animate-spin" />
+                )}
+              </div>
+              <p className="text-xs text-gray-500">
+                上傳店家位置的指示圖片，例如店面照片、位置指示圖等
+              </p>
             </div>
           </div>
 

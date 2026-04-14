@@ -30,8 +30,14 @@ export default function ChatsPage() {
   const [loading, setLoading] = useState(true);
   const [newMessage, setNewMessage] = useState("");
   const [sending, setSending] = useState(false);
+  const [testMode, setTestMode] = useState(false);
+  const [testMessages, setTestMessages] = useState<Message[]>([]);
+  const [testInput, setTestInput] = useState("");
+  const [testSending, setTestSending] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const testMessagesEndRef = useRef<HTMLDivElement>(null);
   const hasScrolledRef = useRef(false);
+  const testHasScrolledRef = useRef(false);
   const supabase = createClient();
 
   const fetchChats = async () => {
@@ -53,7 +59,7 @@ export default function ChatsPage() {
 
       if (data.success) {
         setChats(data.chats);
-        if (data.chats.length > 0 && !selectedChat) {
+        if (data.chats.length > 0 && !selectedChat && !testMode) {
           setSelectedChat(data.chats[0]);
           fetchMessages(data.chats[0].id);
         }
@@ -94,10 +100,23 @@ export default function ChatsPage() {
     }
   }, [messages]);
 
+  // 初始滾動到底端（測試模式）
+  useEffect(() => {
+    if (testMessages.length > 0 && !testHasScrolledRef.current) {
+      testMessagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+      testHasScrolledRef.current = true;
+    }
+  }, [testMessages]);
+
   // 重置滾動標記當切換對話時
   useEffect(() => {
     hasScrolledRef.current = false;
   }, [selectedChat]);
+
+  // 重置滾動標記當切換到測試模式時
+  useEffect(() => {
+    testHasScrolledRef.current = false;
+  }, [testMode]);
 
   useEffect(() => {
     fetchChats();
@@ -159,6 +178,61 @@ export default function ChatsPage() {
     }
   };
 
+  const handleTestSendMessage = async () => {
+    if (!testInput.trim() || testSending) return;
+
+    setTestSending(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      const userId = user?.id;
+
+      const apiUrl = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/api/v1'}/test-message`;
+      const response = await fetch(apiUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          user_id: userId,
+          message: testInput,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success) {
+        // Add user message
+        const userMessage: Message = {
+          id: Date.now().toString(),
+          role: 'user',
+          content: testInput,
+          timestamp: new Date().toISOString()
+        };
+        setTestMessages(prev => [...prev, userMessage]);
+
+        // Add AI response
+        if (data.response) {
+          const aiMessage: Message = {
+            id: (Date.now() + 1).toString(),
+            role: 'ai',
+            content: data.response,
+            timestamp: new Date().toISOString()
+          };
+          setTestMessages(prev => [...prev, aiMessage]);
+        }
+
+        setTestInput("");
+      } else {
+        alert("發送失敗: " + (data.error || "未知錯誤"));
+      }
+    } catch (error) {
+      console.error("Error sending test message:", error);
+      alert("發送失敗: 網絡錯誤");
+    } finally {
+      setTestSending(false);
+    }
+  };
+
   return (
     <div className="h-[calc(100vh-160px)] flex flex-col space-y-6">
       <PageHeader title="對話紀錄" />
@@ -175,41 +249,125 @@ export default function ChatsPage() {
           <div className="flex-1 overflow-y-auto">
             {loading ? (
               <div className="p-4 text-center text-gray-500">載入中...</div>
-            ) : chats.length === 0 ? (
-              <div className="p-4 text-center text-gray-500">暫無對話記錄</div>
             ) : (
-              chats.map((chat) => (
+              <>
+                {/* Test Chat */}
                 <div
-                  key={chat.id}
-                  onClick={() => handleChatSelect(chat)}
-                  className={`p-4 border-b border-gray-50 cursor-pointer transition-colors ${selectedChat?.id === chat.id ? 'bg-gray-50' : 'hover:bg-gray-50/50'}`}
+                  onClick={() => {
+                    setTestMode(true);
+                    setSelectedChat(null);
+                  }}
+                  className={`p-4 border-b border-gray-50 cursor-pointer transition-colors ${testMode ? 'bg-gray-50' : 'hover:bg-gray-50/50'}`}
                 >
                   <div className="flex items-center gap-3">
-                    {chat.picture_url ? (
-                      <img src={chat.picture_url} alt={chat.display_name || chat.user_name} className="w-10 h-10 rounded-full object-cover" />
-                    ) : (
-                      <div className="w-10 h-10 rounded-full bg-black/5 flex items-center justify-center font-bold text-black">
-                        {(chat.display_name || chat.user_name)[0]}
-                      </div>
-                    )}
+                    <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                      <MessageSquare className="w-5 h-5 text-green-600" />
+                    </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex justify-between items-start mb-1">
-                        <h4 className="font-bold text-sm text-gray-900 truncate">{chat.display_name || chat.user_name}</h4>
-                        <span className="text-[10px] text-gray-400 whitespace-nowrap ml-2">{new Date(chat.timestamp).toLocaleTimeString()}</span>
+                        <h4 className="font-bold text-sm text-green-600">測試</h4>
                       </div>
-                      <p className="text-xs text-gray-500 truncate">{chat.last_message}</p>
+                      <p className="text-xs text-gray-500 truncate">模擬客戶對話測試</p>
                     </div>
-                    {chat.unread && <div className="w-2 h-2 bg-blue-600 rounded-full flex-shrink-0" />}
                   </div>
                 </div>
-              ))
+                {chats.length === 0 && !testMode ? (
+                  <div className="p-4 text-center text-gray-500">暫無對話記錄</div>
+                ) : (
+                  chats.map((chat) => (
+                    <div
+                      key={chat.id}
+                      onClick={() => {
+                        handleChatSelect(chat);
+                        setTestMode(false);
+                      }}
+                      className={`p-4 border-b border-gray-50 cursor-pointer transition-colors ${selectedChat?.id === chat.id && !testMode ? 'bg-gray-50' : 'hover:bg-gray-50/50'}`}
+                    >
+                      <div className="flex items-center gap-3">
+                        {chat.picture_url ? (
+                          <img src={chat.picture_url} alt={chat.display_name || chat.user_name} className="w-10 h-10 rounded-full object-cover" />
+                        ) : (
+                          <div className="w-10 h-10 rounded-full bg-black/5 flex items-center justify-center font-bold text-black">
+                            {(chat.display_name || chat.user_name)[0]}
+                          </div>
+                        )}
+                        <div className="flex-1 min-w-0">
+                          <div className="flex justify-between items-start mb-1">
+                            <h4 className="font-bold text-sm text-gray-900 truncate">{chat.display_name || chat.user_name}</h4>
+                            <span className="text-[10px] text-gray-400 whitespace-nowrap ml-2">{new Date(chat.timestamp).toLocaleTimeString()}</span>
+                          </div>
+                          <p className="text-xs text-gray-500 truncate">{chat.last_message}</p>
+                        </div>
+                        {chat.unread && <div className="w-2 h-2 bg-blue-600 rounded-full flex-shrink-0" />}
+                      </div>
+                    </div>
+                  ))
+                )}
+              </>
             )}
           </div>
         </div>
 
         {/* Chat Content */}
         <div className="flex-1 flex flex-col bg-gray-50/30">
-          {selectedChat ? (
+          {testMode ? (
+            <>
+              <div className="p-4 bg-white border-b border-gray-100 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                    <MessageSquare className="w-5 h-5 text-green-600" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-sm text-green-600">測試模式</h3>
+                    <p className="text-xs text-gray-500">模擬客戶對話測試</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex-1 p-6 overflow-y-auto space-y-4 scrollbar-hide">
+                {testMessages.length === 0 ? (
+                  <div className="text-center text-gray-500">開始輸入訊息測試 AI 回覆</div>
+                ) : (
+                  testMessages.map((message) => (
+                    <div key={message.id} className={`flex flex-col ${message.role === 'user' ? 'items-end ml-auto' : 'items-start'} max-w-[80%]`}>
+                      <div className={`p-3 rounded-2xl shadow-sm text-sm ${message.role === 'user' ? 'bg-blue-600 text-white rounded-tr-none' : 'bg-green-600 text-white rounded-tl-none'}`}>
+                        {message.content}
+                      </div>
+                      {message.role === 'ai' && (
+                        <div className="flex items-center gap-1 mt-1">
+                          <Bot className="w-3 h-3 text-gray-400" />
+                          <span className="text-[10px] text-gray-400">AI 測試回覆</span>
+                        </div>
+                      )}
+                      <span className="text-[10px] text-gray-400 mt-1">{new Date(message.timestamp).toLocaleTimeString()}</span>
+                    </div>
+                  ))
+                )}
+                <div ref={testMessagesEndRef} />
+              </div>
+
+              <div className="p-4 bg-white border-t border-gray-100">
+                <div className="flex gap-2">
+                  <input 
+                    type="text" 
+                    placeholder="輸入測試訊息（模擬客戶身份）" 
+                    className="flex-1 px-4 py-2 bg-gray-50 border-none rounded-lg text-sm outline-none focus:ring-1 focus:ring-black"
+                    value={testInput}
+                    onChange={(e) => setTestInput(e.target.value)}
+                    onKeyPress={(e) => e.key === 'Enter' && handleTestSendMessage()}
+                    disabled={testSending}
+                  />
+                  <button 
+                    onClick={handleTestSendMessage}
+                    disabled={testSending || !testInput.trim()}
+                    className="bg-green-600 text-white p-2 rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed"
+                  >
+                    <Send className="w-5 h-5" />
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : selectedChat ? (
             <>
               <div className="p-4 bg-white border-b border-gray-100 flex items-center justify-between">
                 <div className="flex items-center gap-3">
