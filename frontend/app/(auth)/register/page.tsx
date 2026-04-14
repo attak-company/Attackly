@@ -389,8 +389,8 @@ export default function RegisterPage() {
 
   const renderStep1 = () => (
     <div className="space-y-6">
-      <div className="grid grid-cols-2 gap-4">
-        <div>
+      <div className="flex gap-4">
+        <div className="w-[30%]">
           <label className="block text-sm font-medium text-zinc-600 mb-1">姓</label>
           <input
             type="text"
@@ -408,7 +408,7 @@ export default function RegisterPage() {
             required
           />
         </div>
-        <div>
+        <div className="w-[70%]">
           <label className="block text-sm font-medium text-zinc-600 mb-1">名</label>
           <input
             type="text"
@@ -496,7 +496,7 @@ export default function RegisterPage() {
             type="button"
             onClick={sendEmailCode}
             disabled={!email || sendingEmailCode || emailCooldown > 0}
-            className="px-4 h-12 bg-zinc-100 text-zinc-900 rounded-xl hover:bg-zinc-200 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
+            className="px-4 h-12 bg-zinc-100 text-zinc-900 rounded-xl hover:bg-red-50 hover:text-red-600 transition-colors disabled:bg-gray-300 disabled:cursor-not-allowed"
           >
             {emailCooldown > 0 ? (
               `${emailCooldown}秒後重試`
@@ -520,7 +520,7 @@ export default function RegisterPage() {
         <button
           onClick={verifyEmailCode}
           disabled={!email || !emailCode}
-          className="flex-1 bg-zinc-950 text-white h-12 rounded-xl font-bold hover:bg-red-600 transition-colors flex items-center justify-center disabled:bg-gray-400"
+          className="flex-1 bg-zinc-950 text-white h-12 rounded-xl font-bold hover:bg-[#DC2626] transition-colors flex items-center justify-center disabled:bg-gray-400"
         >
           下一步
           <ArrowRight className="w-4 h-4 ml-2" />
@@ -623,22 +623,21 @@ export default function RegisterPage() {
   );
 
   return (
-    <div className="min-h-screen bg-zinc-50 flex items-center justify-center p-4 relative">
-      {/* 返回主頁按鈕 */}
-      <Link href="/" className="absolute top-6 left-6 inline-flex items-center gap-2 text-red-500 hover:text-red-400 transition-colors duration-300 group">
-        <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform duration-300" />
-        <span className="font-medium">返回官網</span>
-      </Link>
+    <div className="min-h-screen bg-zinc-50 flex items-center justify-center p-4">
+      <div className="max-w-md w-full bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden relative">
+        {/* 返回官網按鈕 */}
+        <Link href="/" className="absolute top-4 left-4 inline-flex items-center gap-1.5 text-sm text-red-500 hover:text-red-400 transition-colors duration-300 group">
+          <ArrowLeft className="w-4 h-4 group-hover:-translate-x-1 transition-transform duration-300" />
+          <span className="font-medium">返回官網</span>
+        </Link>
 
-      <div className="max-w-md w-full bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
         <div className="p-8">
-          <div className="flex flex-col items-center mb-8">
+          <div className="flex justify-center mb-10">
             <img
               src="/Logo.png"
               alt="Logo"
-              className="w-24 h-24 object-contain mb-2"
+              className="w-24 h-24 object-contain"
             />
-            <div className="w-20 h-0.5 bg-red-500"></div>
           </div>
           <h2 className="text-3xl font-black text-center text-zinc-950 mb-2">開始您的數位經營</h2>
           <p className="text-sm text-zinc-600 text-center mb-6">建立您的 AI 數位店長帳號</p>
@@ -647,7 +646,7 @@ export default function RegisterPage() {
             type="button"
             onClick={handleGoogleRegister}
             disabled={loading}
-            className="w-full h-12 bg-white border border-zinc-300 text-zinc-900 rounded-xl font-bold hover:bg-zinc-50 transition-colors flex items-center justify-center gap-x-2.5 disabled:bg-gray-100 mb-6"
+            className="w-4/5 mx-auto h-12 bg-white border border-zinc-200 text-zinc-900 rounded-xl font-bold hover:bg-zinc-50 hover:ring-2 hover:ring-red-500 hover:ring-offset-2 transition-colors flex items-center justify-center gap-x-2.5 disabled:bg-gray-100 mb-6"
           >
             {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : (
               <>
@@ -672,35 +671,73 @@ export default function RegisterPage() {
           </div>
 
           {/* Progress Steps */}
-          <div className="flex items-center justify-between mb-8 px-4">
-            {[1, 2, 3].map((s) => (
-              <div key={s} className="flex items-center">
+          <div className="flex items-center justify-center mb-8 px-4">
+            <div className="flex items-center gap-2">
+              {/* 圓圈 1 */}
+              <motion.div
+                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                  step >= 1 ? "bg-red-500 text-white" : "bg-zinc-200 text-zinc-600"
+                }`}
+                animate={{
+                  scale: step === 1 ? 1.2 : 1,
+                  backgroundColor: step >= 1 ? "#DC2626" : "#E4E4E7",
+                  color: step >= 1 ? "#fff" : "#52525B"
+                }}
+                transition={{ duration: 0.3 }}
+              >
+                {step > 1 ? <Check className="w-4 h-4" /> : "1"}
+              </motion.div>
+
+              {/* 線段 1-2 */}
+              <div className="w-8 h-1 bg-zinc-200 rounded overflow-hidden">
                 <motion.div
-                  className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
-                    step >= s
-                      ? "bg-black text-white"
-                      : "bg-gray-200 text-gray-600"
-                  }`}
-                  animate={{
-                    scale: step === s ? 1.2 : 1,
-                    backgroundColor: step >= s ? "#000" : "#e5e7eb",
-                    color: step >= s ? "#fff" : "#4b5563"
-                  }}
-                  transition={{ duration: 0.3 }}
-                >
-                  {s}
-                </motion.div>
-                {s < 3 && (
-                  <motion.div
-                    className={`flex-1 h-1 mx-2 ${step > s ? "bg-black" : "bg-gray-200"}`}
-                    animate={{
-                      backgroundColor: step > s ? "#000" : "#e5e7eb"
-                    }}
-                    transition={{ duration: 0.3 }}
-                  />
-                )}
+                  className="h-full bg-red-500"
+                  initial={{ width: "0%" }}
+                  animate={{ width: step > 1 ? "100%" : "0%" }}
+                  transition={{ duration: 0.5, ease: "easeInOut" }}
+                />
               </div>
-            ))}
+
+              {/* 圓圈 2 */}
+              <motion.div
+                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                  step >= 2 ? "bg-red-500 text-white" : "bg-zinc-200 text-zinc-600"
+                }`}
+                animate={{
+                  scale: step === 2 ? 1.2 : 1,
+                  backgroundColor: step >= 2 ? "#DC2626" : "#E4E4E7",
+                  color: step >= 2 ? "#fff" : "#52525B"
+                }}
+                transition={{ duration: 0.3 }}
+              >
+                {step > 2 ? <Check className="w-4 h-4" /> : "2"}
+              </motion.div>
+
+              {/* 線段 2-3 */}
+              <div className="w-8 h-1 bg-zinc-200 rounded overflow-hidden">
+                <motion.div
+                  className="h-full bg-red-500"
+                  initial={{ width: "0%" }}
+                  animate={{ width: step > 2 ? "100%" : "0%" }}
+                  transition={{ duration: 0.5, ease: "easeInOut" }}
+                />
+              </div>
+
+              {/* 圓圈 3 */}
+              <motion.div
+                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+                  step >= 3 ? "bg-red-500 text-white" : "bg-zinc-200 text-zinc-600"
+                }`}
+                animate={{
+                  scale: step === 3 ? 1.2 : 1,
+                  backgroundColor: step >= 3 ? "#DC2626" : "#E4E4E7",
+                  color: step >= 3 ? "#fff" : "#52525B"
+                }}
+                transition={{ duration: 0.3 }}
+              >
+                {step > 3 ? <Check className="w-4 h-4" /> : "3"}
+              </motion.div>
+            </div>
           </div>
 
           <div>
@@ -746,7 +783,7 @@ export default function RegisterPage() {
           <div className="mt-8 pt-6 border-t border-zinc-200 text-center">
             <p className="text-sm text-zinc-600">
               已有帳號？{" "}
-              <Link href="/login" className="text-zinc-900 font-bold hover:underline">
+              <Link href="/login" className="text-zinc-900 font-bold hover:text-red-700 transition-transform hover:translate-x-1 inline-block">
                 立即登入
               </Link>
             </p>
