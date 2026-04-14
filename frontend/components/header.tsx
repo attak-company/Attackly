@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, ChevronDown, User, LogOut, Settings, UserPlus } from "lucide-react";
+import { Bell, ChevronDown, User, LogOut, Settings, UserPlus, Power } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -11,31 +11,49 @@ export function Header() {
   const [showAccount, setShowAccount] = useState(false);
   const [username, setUsername] = useState<string>("用戶");
   const [notificationCount, setNotificationCount] = useState(0);
+  const [aiEnabled, setAiEnabled] = useState(true);
   const router = useRouter();
   const supabase = createClient();
 
   useEffect(() => {
-    const fetchUsername = async () => {
+    const fetchUserData = async () => {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           const { data: userData } = await supabase
             .from('users')
-            .select('username')
+            .select('username, ai_enabled')
             .eq('id', user.id)
             .single();
           
           if (userData) {
             setUsername(userData.username);
+            setAiEnabled(userData.ai_enabled !== false);
           }
         }
       } catch (error) {
-        console.error("Error fetching username:", error);
+        console.error("Error fetching user data:", error);
       }
     };
 
-    fetchUsername();
+    fetchUserData();
   }, [supabase]);
+
+  const toggleAI = async () => {
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const newValue = !aiEnabled;
+        await supabase
+          .from('users')
+          .update({ ai_enabled: newValue })
+          .eq('id', user.id);
+        setAiEnabled(newValue);
+      }
+    } catch (error) {
+      console.error("Error toggling AI:", error);
+    }
+  };
 
   const handleLogout = async () => {
     await supabase.auth.signOut();
@@ -72,6 +90,23 @@ export function Header() {
       </div>
 
       <div className="flex items-center gap-4">
+        {/* AI Toggle */}
+        <button
+          onClick={toggleAI}
+          className={cn(
+            "flex items-center gap-2 px-3 py-1.5 rounded-md transition-all",
+            aiEnabled
+              ? "bg-green-600/20 text-green-400 hover:bg-green-600/30"
+              : "bg-red-600/20 text-red-400 hover:bg-red-600/30"
+          )}
+          title={aiEnabled ? "AI 已啟用" : "AI 已停用"}
+        >
+          <Power className={cn("h-4 w-4", aiEnabled ? "text-green-400" : "text-red-400")} />
+          <span className="text-xs font-medium">
+            {aiEnabled ? "AI 開啟" : "AI 關閉"}
+          </span>
+        </button>
+
         {/* Notifications */}
         <div className="relative">
           <button

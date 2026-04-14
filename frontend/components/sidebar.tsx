@@ -6,6 +6,7 @@ import { useState } from "react";
 import {
   LayoutDashboard,
   Calendar,
+  CalendarCheck,
   MessageSquare,
   Settings,
   FileText,
@@ -13,16 +14,20 @@ import {
   ChevronDown,
   ChevronRight,
   Key,
-  Store
+  Store,
+  Clock,
+  Package
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "儀表板", href: "/dashboard" },
+  { icon: Clock, label: "營業時間", href: "/dashboard/business-hours" },
+  { icon: Package, label: "服務項目", href: "/dashboard/services" },
   { icon: Calendar, label: "行事曆", href: "/dashboard/calendar" },
-  { icon: Calendar, label: "預約管理", href: "/dashboard/appointments" },
+  { icon: CalendarCheck, label: "預約管理", href: "/dashboard/appointments" },
   { icon: MessageSquare, label: "對話紀錄", href: "/dashboard/chats" },
-  { icon: FileText, label: "FAQ 知識庫", href: "/dashboard/faq" },
+  { icon: FileText, label: "知識庫管理", href: "/dashboard/faq" },
 ];
 
 export function Sidebar() {
