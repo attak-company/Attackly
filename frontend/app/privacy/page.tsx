@@ -1,17 +1,19 @@
 import Link from "next/link";
+import { ArrowLeft } from "lucide-react";
 
 export default function PrivacyPolicy() {
   return (
     <div className="min-h-screen bg-black text-gray-300">
       <div className="max-w-3xl mx-auto px-6 py-20">
         {/* 返回按鈕 */}
-        <Link href="/" className="inline-flex items-center text-gray-400 hover:text-white transition-colors mb-8">
-          <span className="mr-2">←</span> 返回首頁
+        <Link href="/" className="inline-flex items-center gap-2 text-red-500 hover:text-red-400 transition-colors duration-300 mb-8 group">
+          <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform duration-300" />
+          <span className="font-medium">返回官網</span>
         </Link>
 
         {/* 標題 */}
         <h1 className="text-4xl font-bold text-white mb-4">隱私權政策</h1>
-        <p className="text-gray-500 text-sm mb-12">最後更新日期：2026 年 1 月</p>
+        <p className="text-gray-500 text-sm mb-12">最後更新日期：2026 年 4 月</p>
 
         {/* 內容區塊 */}
         <div className="space-y-8">

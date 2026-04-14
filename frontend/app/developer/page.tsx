@@ -1,7 +1,8 @@
 "use client";
 
 import { useState } from "react";
-import { Book, Key, Globe, AlertCircle, Info, Copy, Check } from "lucide-react";
+import { Book, Key, Globe, AlertCircle, Info, Copy, Check, ArrowLeft } from "lucide-react";
+import Link from "next/link";
 
 export default function Developer() {
   const [activeSection, setActiveSection] = useState("authentication");
@@ -16,6 +17,12 @@ export default function Developer() {
   return (
     <div className="min-h-screen bg-[#0A0A0A]">
       <div className="max-w-7xl mx-auto px-6 py-12">
+        {/* 返回按鈕 */}
+        <Link href="/" className="inline-flex items-center gap-2 text-red-500 hover:text-red-400 transition-colors duration-300 mb-8 group">
+          <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform duration-300" />
+          <span className="font-medium">返回官網</span>
+        </Link>
+
         {/* Header */}
         <div className="mb-12">
           <h1 className="text-4xl font-bold text-white mb-4">開發者中心</h1>
