@@ -4,7 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import Link from "next/link";
-import { Bot, LogIn, Lock, Loader2, User, Eye, EyeOff } from "lucide-react";
+import { Bot, LogIn, Lock, Loader2, User, Eye, EyeOff, ArrowLeft } from "lucide-react";
 
 export default function LoginPage() {
   console.log('Login page rendered');
@@ -232,15 +232,22 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-zinc-50 flex items-center justify-center p-4 relative">
+      {/* 返回主頁按鈕 */}
+      <Link href="/" className="absolute top-6 left-6 inline-flex items-center gap-2 text-red-500 hover:text-red-400 transition-colors duration-300 group">
+        <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform duration-300" />
+        <span className="font-medium">返回官網</span>
+      </Link>
+
       <div className="max-w-md w-full bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
         <div className="p-8">
-          <div className="flex justify-center mb-8">
+          <div className="flex flex-col items-center mb-8">
             <img
               src="/Logo.png"
               alt="Logo"
-              className="w-24 h-24 object-contain"
+              className="w-24 h-24 object-contain mb-2"
             />
+            <div className="w-20 h-0.5 bg-red-500"></div>
           </div>
           <h2 className="text-3xl font-black text-center text-zinc-950 mb-2">歡迎回來</h2>
           <p className="text-sm text-zinc-600 text-center mb-8">登入您的數位店長帳號</p>
@@ -284,7 +291,7 @@ export default function LoginPage() {
               </div>
 
               <div className="text-right">
-                <Link href="/forgot-password" className="text-sm text-gray-600 hover:text-black font-medium">
+                <Link href="/forgot-password" className="text-sm text-red-600 hover:text-red-700 font-medium">
                   忘記密碼？
                 </Link>
               </div>
@@ -294,7 +301,7 @@ export default function LoginPage() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full h-12 bg-zinc-950 text-white rounded-xl font-bold hover:bg-red-600 transition-colors flex items-center justify-center disabled:bg-gray-400"
+                className="w-full h-12 bg-zinc-950 text-white rounded-xl font-bold hover:bg-red-600 transition-colors flex items-center justify-center disabled:bg-gray-400 shadow-red-500/10"
               >
                 {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : "發送驗證碼"}
               </button>
@@ -373,7 +380,7 @@ export default function LoginPage() {
           <div className="mt-8 pt-6 border-t border-zinc-200 text-center">
             <p className="text-sm text-zinc-600">
               還沒有帳號？{" "}
-              <Link href="/register" className="text-zinc-900 font-bold hover:underline">
+              <Link href="/register" className="text-red-600 font-bold hover:text-red-700">
                 立即免費註冊
               </Link>
             </p>

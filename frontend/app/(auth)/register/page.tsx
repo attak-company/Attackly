@@ -623,15 +623,22 @@ export default function RegisterPage() {
   );
 
   return (
-    <div className="min-h-screen bg-zinc-50 flex items-center justify-center p-4">
+    <div className="min-h-screen bg-zinc-50 flex items-center justify-center p-4 relative">
+      {/* 返回主頁按鈕 */}
+      <Link href="/" className="absolute top-6 left-6 inline-flex items-center gap-2 text-red-500 hover:text-red-400 transition-colors duration-300 group">
+        <ArrowLeft className="w-5 h-5 group-hover:-translate-x-1 transition-transform duration-300" />
+        <span className="font-medium">返回官網</span>
+      </Link>
+
       <div className="max-w-md w-full bg-white rounded-2xl border border-zinc-200 shadow-sm overflow-hidden">
         <div className="p-8">
-          <div className="flex justify-center mb-8">
+          <div className="flex flex-col items-center mb-8">
             <img
               src="/Logo.png"
               alt="Logo"
-              className="w-24 h-24 object-contain"
+              className="w-24 h-24 object-contain mb-2"
             />
+            <div className="w-20 h-0.5 bg-red-500"></div>
           </div>
           <h2 className="text-3xl font-black text-center text-zinc-950 mb-2">開始您的數位經營</h2>
           <p className="text-sm text-zinc-600 text-center mb-6">建立您的 AI 數位店長帳號</p>
