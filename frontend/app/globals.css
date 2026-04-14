@@ -2,12 +2,34 @@
 
 
 
-:root {
+html {
+  overflow-x: hidden;
+  width: 100%;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+}
 
-  --background: #ffffff;
+html::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Edge, Opera */
+}
 
-  --foreground: #171717;
+body {
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none; /* IE and Edge */
+  overflow-x: hidden;
+  width: 100%;
+  padding-right: 0 !important;
+  margin-right: 0 !important;
+}
 
+body::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Edge, Opera */
+}
+
+/* 確保固定定位的元素（如 Header 或彈窗）也不會位移 */
+.fixed, [style*="position: fixed"] {
+  padding-right: 0px !important;
+  margin-right: 0px !important;
 }
 
 
@@ -282,4 +304,17 @@ main {
 .scrollbar-hide {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+/* 為分隔線添加 CSS 規則來確保顏色正確且寬度為 100% */
+.w-full.relative.group {
+  width: 100%;
+  border-left: none !important;
+  border-right: none !important;
+  border-bottom: none !important;
+}
+
+/* 強制 Footer 容器背景為黑色 */
+footer {
+  background-color: #000000 !important;
 }

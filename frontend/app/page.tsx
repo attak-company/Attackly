@@ -10,11 +10,12 @@ import { useEffect, useState, useRef } from "react";
 
 
 
-import { motion, AnimatePresence } from "framer-motion";
+import { motion, AnimatePresence, useScroll, useTransform } from "framer-motion";
 
 
 
 import Link from "next/link";
+import Image from "next/image";
 
 
 
@@ -294,6 +295,32 @@ export default function LandingPage() {
 
 
   const [activeSection, setActiveSection] = useState('');
+
+  // 滾動進度監測
+  const [scrollProgress, setScrollProgress] = useState(0);
+
+  useEffect(() => {
+    const handleScroll = () => {
+      const scrollTop = window.scrollY || document.documentElement.scrollTop;
+      const docHeight = document.documentElement.scrollHeight;
+      const winHeight = window.innerHeight;
+      const progress = (scrollTop / (docHeight - winHeight)) * 100;
+      setScrollProgress(Math.min(100, Math.max(0, progress)));
+    };
+
+    const handleResize = () => {
+      handleScroll();
+    };
+
+    window.addEventListener('scroll', handleScroll);
+    window.addEventListener('resize', handleResize);
+    handleScroll(); // 初始化
+
+    return () => {
+      window.removeEventListener('scroll', handleScroll);
+      window.removeEventListener('resize', handleResize);
+    };
+  }, []);
 
 
 
@@ -984,16 +1011,13 @@ export default function LandingPage() {
 
 
             <button
-
               onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
-
-              className="relative cursor-pointer rounded-none bg-transparent overflow-hidden transition-all duration-300 ease hover:animate-[random-float_4s_ease-in-out_infinite] hover:drop-shadow-[4px_4px_8px_rgba(0,0,0,0.5)]"
-
+              className="relative cursor-pointer rounded-none bg-transparent overflow-hidden transition-all duration-300 ease hover:animate-[random-float_4s_ease-in-out_infinite] hover:drop-shadow-[4px_4px_8px_rgba(0,0,0,0.5)] active:scale-95 hover:scale-105 active:duration-200"
             >
 
 
 
-              <img
+              <Image
 
 
 
@@ -1002,6 +1026,14 @@ export default function LandingPage() {
 
 
                 alt="Logo"
+
+
+
+                width={56}
+
+
+
+                height={56}
 
 
 
@@ -1045,7 +1077,7 @@ export default function LandingPage() {
 
 
 
-              <a href="#features" onClick={(e) => handleSmoothScroll(e, 'features')} className={`hover:text-red-600 transition-colors relative ${activeSection === 'features' ? 'text-red-600' : ''}`}>
+              <a href="#features" onClick={(e) => handleSmoothScroll(e, 'features')} className={`hover:text-red-600 hover:-translate-y-0.5 active:scale-95 transition-all relative ${activeSection === 'features' ? 'text-red-600' : ''}`}>
 
                 核心功能
 
@@ -1055,7 +1087,7 @@ export default function LandingPage() {
 
 
 
-              <a href="#solutions" onClick={(e) => handleSmoothScroll(e, 'solutions')} className={`hover:text-red-600 transition-colors relative ${activeSection === 'solutions' ? 'text-red-600' : ''}`}>
+              <a href="#solutions" onClick={(e) => handleSmoothScroll(e, 'solutions')} className={`hover:text-red-600 hover:-translate-y-0.5 active:scale-95 transition-all relative ${activeSection === 'solutions' ? 'text-red-600' : ''}`}>
 
                 應用場景
 
@@ -1065,7 +1097,7 @@ export default function LandingPage() {
 
 
 
-              <a href="#setup" onClick={(e) => handleSmoothScroll(e, 'setup')} className={`hover:text-red-600 transition-colors relative ${activeSection === 'setup' ? 'text-red-600' : ''}`}>
+              <a href="#setup" onClick={(e) => handleSmoothScroll(e, 'setup')} className={`hover:text-red-600 hover:-translate-y-0.5 active:scale-95 transition-all relative ${activeSection === 'setup' ? 'text-red-600' : ''}`}>
 
                 設定流程
 
@@ -1075,7 +1107,7 @@ export default function LandingPage() {
 
 
 
-              <a href="#pricing" onClick={(e) => handleSmoothScroll(e, 'pricing')} className={`hover:text-red-600 transition-colors relative ${activeSection === 'pricing' ? 'text-red-600' : ''}`}>
+              <a href="#pricing" onClick={(e) => handleSmoothScroll(e, 'pricing')} className={`hover:text-red-600 hover:-translate-y-0.5 active:scale-95 transition-all relative ${activeSection === 'pricing' ? 'text-red-600' : ''}`}>
 
                 價格方案
 
@@ -1093,7 +1125,7 @@ export default function LandingPage() {
 
 
 
-              <Link href="/login" className="px-5 py-2.5 text-sm font-bold text-gray-700 hover:bg-gray-50 hover:border-red-600 hover:-translate-y-1 hover:shadow-[0_10px_30px_-10px_rgba(255,0,0,0.3)] rounded-xl transition-all border-2 border-transparent">
+              <Link href="/login" className="px-5 py-2.5 text-sm font-bold text-gray-700 hover:bg-gray-50 hover:border-red-600 hover:-translate-y-1 hover:shadow-[0_10px_30px_-10px_rgba(255,0,0,0.3)] active:scale-95 rounded-xl transition-all border-2 border-transparent">
 
 
 
@@ -1146,6 +1178,17 @@ export default function LandingPage() {
 
 
       </nav>
+
+      {/* 捲動進度條 */}
+      <div className="fixed top-[64px] left-0 right-0 h-[2px] z-[9999]">
+        <div
+          style={{
+            transform: `scaleX(${scrollProgress / 100})`,
+            transformOrigin: 'left'
+          }}
+          className="h-full w-full bg-[#DC2626] shadow-[0_0_10px_#DC2626]"
+        />
+      </div>
 
 
 
@@ -1273,7 +1316,7 @@ export default function LandingPage() {
 
 
 
-        <div className="max-w-7xl mx-auto text-center relative z-20">
+        <div className="max-w-7xl mx-auto text-center relative z-20 -mt-15">
 
 
 
@@ -1509,7 +1552,7 @@ export default function LandingPage() {
 
 
 
-              className="w-full sm:w-auto bg-[#0A0A0A] text-white px-10 py-5 rounded-2xl text-xl font-bold hover:border-red-600 hover:-translate-y-1 hover:shadow-[0_10px_30px_-10px_rgba(255,0,0,0.3)] active:scale-95 transition-all flex items-center justify-center group border-2 border-transparent"
+              className="w-full sm:w-auto bg-[#0A0A0A] text-white px-10 py-5 rounded-2xl text-xl font-bold hover:-translate-y-1 hover:shadow-[0_10px_30px_-10px_rgba(255,0,0,0.3)] active:scale-95 transition-all flex items-center justify-center group border-2 border-transparent" 
 
 
 
@@ -1537,7 +1580,7 @@ export default function LandingPage() {
 
 
 
-              className="w-full sm:w-auto border-2 border-gray-200 text-gray-900 px-10 py-5 rounded-2xl text-xl font-bold hover:border-red-600 hover:-translate-y-1 hover:shadow-[0_10px_30px_-10px_rgba(255,0,0,0.3)] transition-all"
+              className="w-full sm:w-auto border-2 border-gray-200 text-gray-900 px-10 py-5 rounded-2xl text-xl font-bold hover:border-red-600 hover:-translate-y-1 hover:shadow-[0_10px_30px_-10px_rgba(255,0,0,0.3)] active:scale-95 transition-all"
 
 
 
@@ -1811,7 +1854,20 @@ export default function LandingPage() {
 
 
 
-            <h2 className="text-4xl md:text-6xl font-black mb-6 text-white">三大核心功能</h2>
+            <div className="mb-6">
+              <div className="relative inline-block">
+                <h2 className="text-4xl md:text-6xl font-black text-white">三大核心功能</h2>
+                <motion.span
+                  initial={{ scale: 0, opacity: 0 }}
+                  whileInView={{ scale: 1, opacity: 1 }}
+                  viewport={{ once: true }}
+                  transition={{ type: "spring", stiffness: 260, damping: 20, delay: 1.3 }}
+                  className="absolute -right-16 -top-2 bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse shadow-[0_0_10px_rgba(255,0,0,0.8)]"
+                >
+                  Alpha_1.0
+                </motion.span>
+              </div>
+            </div>
 
 
 
@@ -2109,7 +2165,7 @@ export default function LandingPage() {
 
       <div className="w-full relative group">
         <div className="absolute inset-0 py-8 -my-8 z-20"></div>
-        <div className="w-full h-1 relative overflow-visible bg-red-600 z-10 shadow-[0_0_25px_rgba(255,0,0,0.8)] group-hover:h-2 group-hover:bg-red-500 group-hover:shadow-[0_0_30px_rgba(255,0,0,0.9)] group-hover:-translate-y-0.5 transition-all duration-300">
+        <div className="w-[calc(100%+20px)] -ml-[10px] h-1 relative overflow-visible bg-red-600 z-10 shadow-[0_0_25px_rgba(255,0,0,0.8)] group-hover:h-2 group-hover:bg-red-500 group-hover:shadow-[0_0_30px_rgba(255,0,0,0.9)] group-hover:-translate-y-0.5 transition-all duration-300">
 
 
 
@@ -2239,7 +2295,7 @@ export default function LandingPage() {
               filter: 'blur(4px)',
 
 
-              webkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0) 100%)',
+              WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0) 100%)',
 
 
               maskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0) 100%)'
@@ -2383,7 +2439,7 @@ export default function LandingPage() {
 
 
 
-              <span className="text-white font-bold text-2xl">LINE</span>
+              <Image src="/line_logo.jpg" alt="LINE" width={60} height={60} className="w-15 h-15 object-contain opacity-90 hover:opacity-100 transition-opacity rounded-xl" />
 
 
 
@@ -2415,7 +2471,7 @@ export default function LandingPage() {
 
 
 
-              <img src="/Gemini_logo.png.png" alt="Gemini" className="w-10 h-10 object-contain filter brightness-0 invert" />
+              <Image src="/Gemini_logo.png.png" alt="Gemini" width={40} height={40} className="w-10 h-10 object-contain filter brightness-0 invert opacity-90 hover:opacity-100 transition-opacity" />
 
 
 
@@ -3117,7 +3173,7 @@ export default function LandingPage() {
 
       <div className="w-full relative group">
         <div className="absolute inset-0 py-8 -my-8 z-20"></div>
-        <div className="w-full h-1 relative overflow-visible bg-red-600 z-10 shadow-[0_0_25px_rgba(255,0,0,0.8)] group-hover:h-2 group-hover:bg-red-500 group-hover:shadow-[0_0_30px_rgba(255,0,0,0.9)] group-hover:-translate-y-0.5 transition-all duration-300">
+        <div className="w-[calc(100%+20px)] -ml-[10px] h-1 relative overflow-visible bg-red-600 z-10 shadow-[0_0_25px_rgba(255,0,0,0.8)] group-hover:h-2 group-hover:bg-red-500 group-hover:shadow-[0_0_30px_rgba(255,0,0,0.9)] group-hover:-translate-y-0.5 transition-all duration-300">
 
         <div
           ref={sparkRef2}
@@ -3158,7 +3214,7 @@ export default function LandingPage() {
             className="absolute top-full left-0 w-full h-full -scale-y-100 opacity-30 blur-sm"
             style={{
               filter: 'blur(4px)',
-              webkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0) 100%)',
+              WebkitMaskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0) 100%)',
               maskImage: 'linear-gradient(to bottom, rgba(0,0,0,0.3) 0%, rgba(0,0,0,0) 100%)'
             }}
           >
@@ -3657,7 +3713,7 @@ export default function LandingPage() {
 
               <div className="flex items-center justify-between mb-4">
 
-                <div className="flex items-center gap-2">
+                <Link href="/status" className="flex items-center gap-2 group">
 
                   <motion.div
 
@@ -3683,9 +3739,9 @@ export default function LandingPage() {
 
                   />
 
-                  <span className="text-white font-bold text-sm">系統狀態</span>
+                  <span className="text-white font-bold text-sm group-hover:text-green-400 transition-colors">系統狀態</span>
 
-                </div>
+                </Link>
 
                 <span className="text-green-500 font-bold text-sm">運行中</span>
 
@@ -3982,7 +4038,7 @@ export default function LandingPage() {
 
               <div className="flex-1"></div>
 
-              <Link href="/register" className="block w-full py-4 bg-red-500 text-white text-center rounded-2xl font-black border-2 border-red-600 hover:bg-[#FF0000] hover:border-red-700 hover:-translate-y-1 transition-all mt-auto">
+              <Link href="/register" className="block w-full py-4 bg-red-500 text-white text-center rounded-2xl font-black border-2 border-red-600 hover:bg-[#FF0000] hover:border-red-700 hover:-translate-y-1 active:scale-95 transition-all mt-auto">
 
 
 
@@ -4091,7 +4147,7 @@ export default function LandingPage() {
 
 
 
-                <img 
+                <Image 
 
 
 
@@ -4099,7 +4155,7 @@ export default function LandingPage() {
 
 
 
-                  alt="Digital Manager Logo" 
+                  alt="Digital Manager Logo" width={56} height={56} 
 
 
 
@@ -4159,7 +4215,7 @@ export default function LandingPage() {
 
 
 
-                  <button onClick={(e) => { e.preventDefault(); document.getElementById('features')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} className="text-gray-400 text-sm hover:text-red-500 transition-colors flex items-center gap-2 bg-transparent border-none cursor-pointer">
+                  <button onClick={(e) => { e.preventDefault(); document.getElementById('features')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} className="text-gray-400 text-sm hover:text-red-500 hover:-translate-y-0.5 active:scale-95 transition-all flex items-center gap-2 bg-transparent border-none cursor-pointer">
 
 
 
@@ -4171,7 +4227,15 @@ export default function LandingPage() {
 
 
 
-                    <span className="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse shadow-[0_0_10px_rgba(255,0,0,0.8)]">Alpha_1.0</span>
+                    <motion.span
+                      initial={{ scale: 0, opacity: 0 }}
+                      whileInView={{ scale: 1, opacity: 1 }}
+                      viewport={{ once: true }}
+                      transition={{ type: "spring", stiffness: 260, damping: 20, delay: 0.5 }}
+                      className="bg-red-500 text-white text-[10px] font-bold px-2 py-0.5 rounded-full animate-pulse shadow-[0_0_10px_rgba(255,0,0,0.8)]"
+                    >
+                      Alpha_1.0
+                    </motion.span>
 
 
 
@@ -4187,7 +4251,7 @@ export default function LandingPage() {
 
 
 
-                  <button onClick={(e) => { e.preventDefault(); document.getElementById('solutions')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} className="text-gray-400 text-sm hover:text-red-500 transition-colors flex items-center gap-2 bg-transparent border-none cursor-pointer">
+                  <button onClick={(e) => { e.preventDefault(); document.getElementById('solutions')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} className="text-gray-400 text-sm hover:text-red-500 hover:-translate-y-0.5 active:scale-95 transition-all flex items-center gap-2 bg-transparent border-none cursor-pointer">
 
 
 
@@ -4211,7 +4275,7 @@ export default function LandingPage() {
 
 
 
-                  <button onClick={(e) => { e.preventDefault(); document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} className="text-gray-400 text-sm hover:text-red-500 transition-colors flex items-center gap-2 bg-transparent border-none cursor-pointer">
+                  <button onClick={(e) => { e.preventDefault(); document.getElementById('pricing')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); }} className="text-gray-400 text-sm hover:text-red-500 hover:-translate-y-0.5 active:scale-95 transition-all flex items-center gap-2 bg-transparent border-none cursor-pointer">
 
 
 
@@ -4235,7 +4299,7 @@ export default function LandingPage() {
 
 
 
-                  <button onClick={() => setShowVideoModal(true)} className="text-gray-400 text-sm hover:text-red-500 transition-colors flex items-center gap-2 bg-transparent border-none cursor-pointer">
+                  <button onClick={() => setShowVideoModal(true)} className="text-gray-400 text-sm hover:text-red-500 hover:-translate-y-0.5 active:scale-95 transition-all flex items-center gap-2 bg-transparent border-none cursor-pointer">
 
 
 
@@ -4287,7 +4351,7 @@ export default function LandingPage() {
 
 
 
-                  <button onClick={() => setShowQuickStartModal(true)} className="text-gray-400 text-sm hover:text-red-500 transition-colors flex items-center gap-2 bg-transparent border-none cursor-pointer">
+                  <button onClick={() => setShowQuickStartModal(true)} className="text-gray-400 text-sm hover:text-red-500 hover:-translate-y-0.5 active:scale-95 transition-all flex items-center gap-2 bg-transparent border-none cursor-pointer">
 
 
 
@@ -4311,7 +4375,7 @@ export default function LandingPage() {
 
 
 
-                  <Link href="/developer" className="text-gray-400 text-sm hover:text-red-500 transition-colors flex items-center gap-2">
+                  <Link href="/developer" className="text-gray-400 text-sm hover:text-red-500 hover:-translate-y-0.5 active:scale-95 transition-all flex items-center gap-2">
 
 
 
@@ -4334,7 +4398,7 @@ export default function LandingPage() {
                 <li className="relative" ref={faqDropdownRef}>
                   <button
                     onClick={() => setShowFaqDropdown(!showFaqDropdown)}
-                    className="text-gray-400 text-sm hover:text-red-500 transition-colors flex items-center gap-2 bg-transparent border-none cursor-pointer"
+                    className="text-gray-400 text-sm hover:text-red-500 hover:-translate-y-0.5 active:scale-95 transition-all flex items-center gap-2 bg-transparent border-none cursor-pointer"
                   >
                     <HelpCircle className="w-4 h-4" />
                     幫助中心
@@ -4372,13 +4436,20 @@ export default function LandingPage() {
                             <AnimatePresence>
                               {expandedDropdownQuestion === 'line' && (
                                 <motion.div
-                                  initial={{ opacity: 0, maxHeight: 0 }}
-                                  animate={{ opacity: 1, maxHeight: 100 }}
-                                  exit={{ opacity: 0, maxHeight: 0 }}
+                                  initial={{ height: 0, opacity: 0 }}
+                                  animate={{ height: 'auto', opacity: 1 }}
+                                  exit={{ height: 0, opacity: 0 }}
                                   transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-                                  className="px-3 py-2 text-gray-400 text-xs ml-6 border-l-2 border-red-500 mt-1 overflow-hidden"
+                                  className="overflow-hidden"
                                 >
-                                  在系統設定的「LINE 串接」頁面中，按照指引完成 LINE Messaging API 的設定即可。
+                                  <motion.div
+                                    initial={{ opacity: 0, y: -10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: 0.1, duration: 0.2 }}
+                                    className="px-3 py-2 text-gray-400 text-xs ml-6 border-l-2 border-red-500 mt-1"
+                                  >
+                                    在系統設定的「LINE 串接」頁面中，按照指引完成 LINE Messaging API 的設定即可。
+                                  </motion.div>
                                 </motion.div>
                               )}
                             </AnimatePresence>
@@ -4404,13 +4475,20 @@ export default function LandingPage() {
                             <AnimatePresence>
                               {expandedDropdownQuestion === 'security' && (
                                 <motion.div
-                                  initial={{ opacity: 0, maxHeight: 0 }}
-                                  animate={{ opacity: 1, maxHeight: 100 }}
-                                  exit={{ opacity: 0, maxHeight: 0 }}
+                                  initial={{ height: 0, opacity: 0 }}
+                                  animate={{ height: 'auto', opacity: 1 }}
+                                  exit={{ height: 0, opacity: 0 }}
                                   transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-                                  className="px-3 py-2 text-gray-400 text-xs ml-6 border-l-2 border-red-500 mt-1 overflow-hidden"
+                                  className="overflow-hidden"
                                 >
-                                  我們採用 SSL/TLS 加密傳輸，並符合台灣個人資料保護法規，確保您的資料安全。
+                                  <motion.div
+                                    initial={{ opacity: 0, y: -10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: 0.1, duration: 0.2 }}
+                                    className="px-3 py-2 text-gray-400 text-xs ml-6 border-l-2 border-red-500 mt-1"
+                                  >
+                                    我們採用 SSL/TLS 加密傳輸，並符合台灣個人資料保護法規，確保您的資料安全。
+                                  </motion.div>
                                 </motion.div>
                               )}
                             </AnimatePresence>
@@ -4436,13 +4514,20 @@ export default function LandingPage() {
                             <AnimatePresence>
                               {expandedDropdownQuestion === 'ai' && (
                                 <motion.div
-                                  initial={{ opacity: 0, maxHeight: 0 }}
-                                  animate={{ opacity: 1, maxHeight: 100 }}
-                                  exit={{ opacity: 0, maxHeight: 0 }}
+                                  initial={{ height: 0, opacity: 0 }}
+                                  animate={{ height: 'auto', opacity: 1 }}
+                                  exit={{ height: 0, opacity: 0 }}
                                   transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
-                                  className="px-3 py-2 text-gray-400 text-xs ml-6 border-l-2 border-red-500 mt-1 overflow-hidden"
+                                  className="overflow-hidden"
                                 >
-                                  在系統設定中啟用「自動預約」功能，AI 會自動辨識對話中的預約意圖並協助安排。
+                                  <motion.div
+                                    initial={{ opacity: 0, y: -10 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    transition={{ delay: 0.1, duration: 0.2 }}
+                                    className="px-3 py-2 text-gray-400 text-xs ml-6 border-l-2 border-red-500 mt-1"
+                                  >
+                                    在系統設定中啟用「自動預約」功能，AI 會自動辨識對話中的預約意圖並協助安排。
+                                  </motion.div>
                                 </motion.div>
                               )}
                             </AnimatePresence>
@@ -4497,7 +4582,7 @@ export default function LandingPage() {
 
 
 
-                  <div className="text-gray-400 text-sm flex items-center gap-2">
+                  <Link href="/status" className="text-gray-400 text-sm flex items-center gap-2 hover:text-green-400 transition-colors">
 
 
 
@@ -4513,7 +4598,7 @@ export default function LandingPage() {
 
 
 
-                  </div>
+                  </Link>
 
 
 
@@ -4577,19 +4662,11 @@ export default function LandingPage() {
 
 
 
-                  <a href="#" className="text-gray-400 text-sm hover:text-red-500 transition-colors flex items-center gap-2">
+                  <a href="#" className="text-gray-400 text-sm hover:text-red-500 transition-colors flex items-center gap-2 group">
 
 
 
-                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512" className="w-5 h-5 fill-current">
-
-
-
-                      <path d="M224.1 141c-63.6 0-117.1 19.9-144.6 51.4-15.8 17.9-24.4 40.1-24.4 65.2 0 27.9 11.2 54.1 31.5 73.9 23.2 22.6 57.5 35.8 94.2 37.5v45.5c0 6.5 7.4 10.2 12.6 6.4l62.2-45.2c24.7-2.5 48.1-10.5 67.4-23.2 22.3-14.8 35.1-36.3 35.1-59.4 0-25.1-8.6-47.3-24.4-65.2-27.5-31.5-81-51.4-144.6-51.4zm0 20c55.6 0 102.8 17.5 126.4 44.6 13.2 15 20.4 33.3 20.4 52 0 16.3-5.6 31.5-15.8 43.7-17.2 20.4-46.6 32.9-79.3 34.3l-4.3.2-50.5 36.7v-37.3l-4.3-.2c-32.7-1.4-62.1-13.9-79.3-34.3-10.2-12.2-15.8-27.4-15.8-43.7 0-18.7 7.2-37 20.4-52 23.6-27.1 70.8-44.6 126.4-44.6z"/>
-
-
-
-                    </svg>
+                    <Image src="/line_logo.jpg" alt="LINE" width={24} height={24} className="w-6 h-6 rounded-sm transition-all -ml-[0.75px] group-hover:border-2 group-hover:border-red-500" />
 
 
 
@@ -4677,11 +4754,56 @@ export default function LandingPage() {
 
 
 
-              <div className="flex gap-4">
 
 
 
-                <Link href="/privacy" className="text-gray-500 text-xs hover:text-red-500 transition-colors">
+            </div>
+
+
+
+            {/* 藍新金流 Logo 與安全背書 */}
+
+
+
+            <div className="flex flex-col items-center gap-3 mb-6">
+
+
+
+              <p className="text-white/30 text-[10px] uppercase tracking-widest">
+
+                全站採用 SSL 256bit 加密技術，確保交易安全
+
+              </p>
+
+
+
+              <a href="https://www.newebpay.com/" target="_blank" rel="noopener noreferrer">
+                <Image src="/footer-logo-220x50.png" alt="藍新金流" width={220} height={50} className="h-8 object-contain filter brightness-0 invert opacity-50 hover:opacity-100 transition-opacity" />
+              </a>
+
+
+
+              <div className="flex gap-4 justify-center mt-6 text-xs text-white/50">
+
+
+
+                <Link href="/terms" className="hover:text-red-500 transition-colors duration-300 ease-in-out">
+
+
+
+                  服務條款
+
+
+
+                </Link>
+
+
+
+                <span className="text-white/30">|</span>
+
+
+
+                <Link href="/privacy" className="hover:text-red-500 transition-colors duration-300 ease-in-out">
 
 
 
@@ -4693,15 +4815,15 @@ export default function LandingPage() {
 
 
 
-                <span className="text-gray-600 text-xs">|</span>
+                <span className="text-white/30">|</span>
 
 
 
-                <Link href="/terms" className="text-gray-500 text-xs hover:text-red-500 transition-colors">
+                <Link href="/refund-policy" className="hover:text-red-500 transition-colors duration-300 ease-in-out">
 
 
 
-                  服務條款
+                  退費政策
 
 
 
@@ -4737,7 +4859,7 @@ export default function LandingPage() {
 
 
 
-              <p className="text-[12px] text-gray-500 leading-relaxed">
+              <p className="text-[10px] text-white/30 leading-relaxed">
 
 
 
@@ -4749,7 +4871,7 @@ export default function LandingPage() {
 
 
 
-              <p className="text-[12px] text-gray-500 leading-relaxed">
+              <p className="text-[10px] text-white/30 leading-relaxed">
 
 
 
@@ -4761,7 +4883,7 @@ export default function LandingPage() {
 
 
 
-              <p className="text-[12px] text-gray-500 leading-relaxed">
+              <p className="text-[10px] text-white/30 leading-relaxed">
 
 
 
@@ -4777,7 +4899,7 @@ export default function LandingPage() {
 
 
 
-                7 天免費試用期內可隨時取消訂閱並申請退費。後續訂閱將依月計費，您可隨時於後台停止續約。
+                <span className="font-semibold">7 天免費試用</span>期內可隨時取消訂閱並<span className="underline underline-offset-2 decoration-white/30">申請退費</span>。後續訂閱將依月計費，您可隨時於後台停止續約。
 
 
 
@@ -5767,26 +5889,54 @@ export default function LandingPage() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                       </svg>
                     </button>
-                    {expandedFaqCategory === 'billing' && (
-                      <div className="px-4 pb-4 space-y-3">
-                        <div className="border-l-2 border-red-500 pl-3">
-                          <p className="text-gray-300 text-sm font-medium mb-1">如何變更訂閱計劃？</p>
-                          <p className="text-gray-400 text-xs">您可以在 Dashboard 的「訂閱管理」頁面中隨時升級或降級您的計劃。</p>
-                        </div>
-                        <div className="border-l-2 border-red-500 pl-3">
-                          <p className="text-gray-300 text-sm font-medium mb-1">退費政策是什麼？</p>
-                          <p className="text-gray-400 text-xs">我們提供 7 天無條件退費保證，若不滿意可申請全額退款。</p>
-                        </div>
-                        <div className="border-l-2 border-red-500 pl-3">
-                          <p className="text-gray-300 text-sm font-medium mb-1">如何開立發票？</p>
-                          <p className="text-gray-400 text-xs">請稍待我們新增發票開立功能，目前可聯繫客服協助處理。</p>
-                        </div>
-                        <div className="border-l-2 border-red-500 pl-3">
-                          <p className="text-gray-300 text-sm font-medium mb-1">付款方式有哪些？</p>
-                          <p className="text-gray-400 text-xs">目前支援信用卡、LINE Pay 等付款方式。</p>
-                        </div>
-                      </div>
-                    )}
+                    <AnimatePresence>
+                      {expandedFaqCategory === 'billing' && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+                          className="px-4 pb-4 space-y-3 overflow-hidden"
+                        >
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.1, duration: 0.2 }}
+                            className="border-l-2 border-red-500 pl-3"
+                          >
+                            <p className="text-gray-300 text-sm font-medium mb-1">如何變更訂閱計劃？</p>
+                            <p className="text-gray-400 text-xs">您可以在 Dashboard 的「訂閱管理」頁面中隨時升級或降級您的計劃。</p>
+                          </motion.div>
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.15, duration: 0.2 }}
+                            className="border-l-2 border-red-500 pl-3"
+                          >
+                            <p className="text-gray-300 text-sm font-medium mb-1">退費政策是什麼？</p>
+                            <p className="text-gray-400 text-xs">我們提供 7 天無條件退費保證，若不滿意可申請全額退款。</p>
+                          </motion.div>
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.2, duration: 0.2 }}
+                            className="border-l-2 border-red-500 pl-3"
+                          >
+                            <p className="text-gray-300 text-sm font-medium mb-1">如何開立發票？</p>
+                            <p className="text-gray-400 text-xs">請稍待我們新增發票開立功能，目前可聯繫客服協助處理。</p>
+                          </motion.div>
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.25, duration: 0.2 }}
+                            className="border-l-2 border-red-500 pl-3"
+                          >
+                            <p className="text-gray-300 text-sm font-medium mb-1">付款方式有哪些？</p>
+                            <p className="text-gray-400 text-xs">目前支援信用卡、LINE Pay 等付款方式。</p>
+                          </motion.div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
 
                   {/* AI 設定 */}
@@ -5805,30 +5955,63 @@ export default function LandingPage() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                       </svg>
                     </button>
-                    {expandedFaqCategory === 'ai' && (
-                      <div className="px-4 pb-4 space-y-3">
-                        <div className="border-l-2 border-red-500 pl-3">
-                          <p className="text-gray-300 text-sm font-medium mb-1">如何調整 AI 回覆語氣？</p>
-                          <p className="text-gray-400 text-xs">在系統設定的「AI 語氣」頁面中，您可以選擇專業、親切、活潑等不同語氣風格。</p>
-                        </div>
-                        <div className="border-l-2 border-red-500 pl-3">
-                          <p className="text-gray-300 text-sm font-medium mb-1">如何匯入 FAQ 知識庫？</p>
-                          <p className="text-gray-400 text-xs">請稍待我們新增批次匯入功能，目前可在知識庫頁面手動新增 FAQ。</p>
-                        </div>
-                        <div className="border-l-2 border-red-500 pl-3">
-                          <p className="text-gray-300 text-sm font-medium mb-1">AI 無法回答問題怎麼辦？</p>
-                          <p className="text-gray-400 text-xs">您可以在對話紀錄中手動介入回答，並將該問題加入知識庫供 AI 學習。</p>
-                        </div>
-                        <div className="border-l-2 border-red-500 pl-3">
-                          <p className="text-gray-300 text-sm font-medium mb-1">如何讓 AI 自動回覆預約？</p>
-                          <p className="text-gray-400 text-xs">在系統設定中啟用「自動預約」功能，AI 會自動辨識對話中的預約意圖並協助安排。</p>
-                        </div>
-                        <div className="border-l-2 border-red-500 pl-3">
-                          <p className="text-gray-300 text-sm font-medium mb-1">AI 會學習我的回覆方式嗎？</p>
-                          <p className="text-gray-400 text-xs">會！透過知識庫和對話紀錄，AI 會逐漸學習您的回覆風格和業務邏輯。</p>
-                        </div>
-                      </div>
-                    )}
+                    <AnimatePresence>
+                      {expandedFaqCategory === 'ai' && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+                          className="px-4 pb-4 space-y-3 overflow-hidden"
+                        >
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.1, duration: 0.2 }}
+                            className="border-l-2 border-red-500 pl-3"
+                          >
+                            <p className="text-gray-300 text-sm font-medium mb-1">如何調整 AI 回覆語氣？</p>
+                            <p className="text-gray-400 text-xs">在系統設定的「AI 語氣」頁面中，您可以選擇專業、親切、活潑等不同語氣風格。</p>
+                          </motion.div>
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.15, duration: 0.2 }}
+                            className="border-l-2 border-red-500 pl-3"
+                          >
+                            <p className="text-gray-300 text-sm font-medium mb-1">如何匯入 FAQ 知識庫？</p>
+                            <p className="text-gray-400 text-xs">請稍待我們新增批次匯入功能，目前可在知識庫頁面手動新增 FAQ。</p>
+                          </motion.div>
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.2, duration: 0.2 }}
+                            className="border-l-2 border-red-500 pl-3"
+                          >
+                            <p className="text-gray-300 text-sm font-medium mb-1">AI 無法回答問題怎麼辦？</p>
+                            <p className="text-gray-400 text-xs">您可以在對話紀錄中手動介入回答，並將該問題加入知識庫供 AI 學習。</p>
+                          </motion.div>
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.25, duration: 0.2 }}
+                            className="border-l-2 border-red-500 pl-3"
+                          >
+                            <p className="text-gray-300 text-sm font-medium mb-1">如何讓 AI 自動回覆預約？</p>
+                            <p className="text-gray-400 text-xs">在系統設定中啟用「自動預約」功能，AI 會自動辨識對話中的預約意圖並協助安排。</p>
+                          </motion.div>
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.3, duration: 0.2 }}
+                            className="border-l-2 border-red-500 pl-3"
+                          >
+                            <p className="text-gray-300 text-sm font-medium mb-1">AI 會學習我的回覆方式嗎？</p>
+                            <p className="text-gray-400 text-xs">會！透過知識庫和對話紀錄，AI 會逐漸學習您的回覆風格和業務邏輯。</p>
+                          </motion.div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
 
                   {/* 預約管理 */}
@@ -5847,26 +6030,54 @@ export default function LandingPage() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                       </svg>
                     </button>
-                    {expandedFaqCategory === 'booking' && (
-                      <div className="px-4 pb-4 space-y-3">
-                        <div className="border-l-2 border-red-500 pl-3">
-                          <p className="text-gray-300 text-sm font-medium mb-1">如何手動修改預約？</p>
-                          <p className="text-gray-400 text-xs">在行事曆頁面中點擊預約即可進行編輯或取消操作。</p>
-                        </div>
-                        <div className="border-l-2 border-red-500 pl-3">
-                          <p className="text-gray-300 text-sm font-medium mb-1">行事曆同步失敗怎麼辦？</p>
-                          <p className="text-gray-400 text-xs">請檢查您的網路連線，或重新連接 LINE 官方帳號。若問題持續請聯繫客服。</p>
-                        </div>
-                        <div className="border-l-2 border-red-500 pl-3">
-                          <p className="text-gray-300 text-sm font-medium mb-1">如何設定營業時間？</p>
-                          <p className="text-gray-400 text-xs">在系統設定的「店家資訊」頁面中，您可以設定每日的營業時間和休息日。</p>
-                        </div>
-                        <div className="border-l-2 border-red-500 pl-3">
-                          <p className="text-gray-300 text-sm font-medium mb-1">如何導入既有客戶資料？</p>
-                          <p className="text-gray-400 text-xs">請稍待我們新增批次匯入功能，目前可聯繫客服協助處理。</p>
-                        </div>
-                      </div>
-                    )}
+                    <AnimatePresence>
+                      {expandedFaqCategory === 'booking' && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+                          className="px-4 pb-4 space-y-3 overflow-hidden"
+                        >
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.1, duration: 0.2 }}
+                            className="border-l-2 border-red-500 pl-3"
+                          >
+                            <p className="text-gray-300 text-sm font-medium mb-1">如何手動修改預約？</p>
+                            <p className="text-gray-400 text-xs">在行事曆頁面中點擊預約即可進行編輯或取消操作。</p>
+                          </motion.div>
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.15, duration: 0.2 }}
+                            className="border-l-2 border-red-500 pl-3"
+                          >
+                            <p className="text-gray-300 text-sm font-medium mb-1">行事曆同步失敗怎麼辦？</p>
+                            <p className="text-gray-400 text-xs">請檢查您的網路連線，或重新連接 LINE 官方帳號。若問題持續請聯繫客服。</p>
+                          </motion.div>
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.2, duration: 0.2 }}
+                            className="border-l-2 border-red-500 pl-3"
+                          >
+                            <p className="text-gray-300 text-sm font-medium mb-1">如何設定營業時間？</p>
+                            <p className="text-gray-400 text-xs">在系統設定的「店家資訊」頁面中，您可以設定每日的營業時間和休息日。</p>
+                          </motion.div>
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.25, duration: 0.2 }}
+                            className="border-l-2 border-red-500 pl-3"
+                          >
+                            <p className="text-gray-300 text-sm font-medium mb-1">如何導入既有客戶資料？</p>
+                            <p className="text-gray-400 text-xs">請稍待我們新增批次匯入功能，目前可聯繫客服協助處理。</p>
+                          </motion.div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
 
                   {/* 系統串接 */}
@@ -5885,30 +6096,63 @@ export default function LandingPage() {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                       </svg>
                     </button>
-                    {expandedFaqCategory === 'integration' && (
-                      <div className="px-4 pb-4 space-y-3">
-                        <div className="border-l-2 border-red-500 pl-3">
-                          <p className="text-gray-300 text-sm font-medium mb-1">如何串接 LINE 官方帳號？</p>
-                          <p className="text-gray-400 text-xs">在系統設定的「LINE 串接」頁面中，按照指引完成 LINE Messaging API 的設定即可。</p>
-                        </div>
-                        <div className="border-l-2 border-red-500 pl-3">
-                          <p className="text-gray-300 text-sm font-medium mb-1">我的顧客資料安全嗎？</p>
-                          <p className="text-gray-400 text-xs">我們採用 SSL/TLS 加密傳輸，並符合台灣個人資料保護法規，確保您的資料安全。</p>
-                        </div>
-                        <div className="border-l-2 border-red-500 pl-3">
-                          <p className="text-gray-300 text-sm font-medium mb-1">如何使用 API 整合？</p>
-                          <p className="text-gray-400 text-xs">請參考我們的開發者中心文件，獲取 API Key 並進行系統整合。</p>
-                        </div>
-                        <div className="border-l-2 border-red-500 pl-3">
-                          <p className="text-gray-300 text-sm font-medium mb-1">支援 Webhooks 通知嗎？</p>
-                          <p className="text-gray-400 text-xs">請稍待我們新增 Webhooks 功能，屆時您可接收預約建立、客戶訊息等即時通知。</p>
-                        </div>
-                        <div className="border-l-2 border-red-500 pl-3">
-                          <p className="text-gray-300 text-sm font-medium mb-1">可以串接其他通訊平台嗎？</p>
-                          <p className="text-gray-400 text-xs">請稍待我們新增其他平台支援，目前專注於 LINE 官方帳號的整合。</p>
-                        </div>
-                      </div>
-                    )}
+                    <AnimatePresence>
+                      {expandedFaqCategory === 'integration' && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: 'auto', opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
+                          className="px-4 pb-4 space-y-3 overflow-hidden"
+                        >
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.1, duration: 0.2 }}
+                            className="border-l-2 border-red-500 pl-3"
+                          >
+                            <p className="text-gray-300 text-sm font-medium mb-1">如何串接 LINE 官方帳號？</p>
+                            <p className="text-gray-400 text-xs">在系統設定的「LINE 串接」頁面中，按照指引完成 LINE Messaging API 的設定即可。</p>
+                          </motion.div>
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.15, duration: 0.2 }}
+                            className="border-l-2 border-red-500 pl-3"
+                          >
+                            <p className="text-gray-300 text-sm font-medium mb-1">我的顧客資料安全嗎？</p>
+                            <p className="text-gray-400 text-xs">我們採用 SSL/TLS 加密傳輸，並符合台灣個人資料保護法規，確保您的資料安全。</p>
+                          </motion.div>
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.2, duration: 0.2 }}
+                            className="border-l-2 border-red-500 pl-3"
+                          >
+                            <p className="text-gray-300 text-sm font-medium mb-1">如何使用 API 整合？</p>
+                            <p className="text-gray-400 text-xs">請參考我們的開發者中心文件，獲取 API Key 並進行系統整合。</p>
+                          </motion.div>
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.25, duration: 0.2 }}
+                            className="border-l-2 border-red-500 pl-3"
+                          >
+                            <p className="text-gray-300 text-sm font-medium mb-1">支援 Webhooks 通知嗎？</p>
+                            <p className="text-gray-400 text-xs">請稍待我們新增 Webhooks 功能，屆時您可接收預約建立、客戶訊息等即時通知。</p>
+                          </motion.div>
+                          <motion.div
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.3, duration: 0.2 }}
+                            className="border-l-2 border-red-500 pl-3"
+                          >
+                            <p className="text-gray-300 text-sm font-medium mb-1">可以串接其他通訊平台嗎？</p>
+                            <p className="text-gray-400 text-xs">請稍待我們新增其他平台支援，目前專注於 LINE 官方帳號的整合。</p>
+                          </motion.div>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
                   </div>
                   <div className="absolute bottom-0 left-0 right-0 h-12 bg-gradient-to-t from-[#0A0A0A] to-transparent pointer-events-none"></div>
