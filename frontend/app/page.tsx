@@ -352,7 +352,7 @@ export default function LandingPage() {
 
   const [expandedDropdownQuestion, setExpandedDropdownQuestion] = useState<string | null>(null);
 
-  const faqDropdownRef = useRef<HTMLDivElement>(null);
+  const faqDropdownRef = useRef<HTMLLIElement>(null);
 
   const pricingSectionRef = useRef<HTMLElement>(null);
 
