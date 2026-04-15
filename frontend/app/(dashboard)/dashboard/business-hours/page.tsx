@@ -424,7 +424,7 @@ export default function BusinessHoursPage() {
 
             {/* 最後收客時間設定 */}
             <div className="bg-white rounded-2xl shadow-sm border border-zinc-200 p-6">
-              <h3 className="font-bold text-zinc-900 mb-4">最後收客時間緩衝</h3>
+              <h3 className="font-bold text-zinc-900 mb-4">O後收客時間緩衝</h3>
               <div className="flex items-center gap-4">
                 <input
                   type="number"

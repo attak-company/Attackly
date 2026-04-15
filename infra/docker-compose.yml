@@ -11,15 +11,9 @@ services:
       - ../backend/.env
     depends_on:
       - redis
-
-  frontend:
-    build:
-      context: ../frontend
-      dockerfile: Dockerfile
-    ports:
-      - "3000:3000"
-    env_file:
-      - ../frontend/.env.local
+    volumes:
+      - ../backend:/app
+      - /app/__pycache__
 
   redis:
     image: redis:alpine
