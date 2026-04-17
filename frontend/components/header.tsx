@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, ChevronDown, User, LogOut, Settings, UserPlus, Power } from "lucide-react";
+import { Bell, ChevronDown, User, LogOut, UserPlus, Power } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -58,11 +58,6 @@ export function Header() {
   const handleLogout = async () => {
     await supabase.auth.signOut();
     router.push("/login");
-    setShowAccount(false);
-  };
-
-  const handleAccountSettings = () => {
-    router.push("/dashboard/account");
     setShowAccount(false);
   };
 
@@ -149,14 +144,6 @@ export function Header() {
 
           {showAccount && (
             <div className="absolute top-full right-0 mt-2 w-48 bg-white rounded-lg shadow-xl border border-gray-200 text-gray-900 z-50 py-1">
-              <button
-                onClick={handleAccountSettings}
-                className="w-full flex items-center gap-3 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 transition-colors"
-              >
-                <Settings className="h-4 w-4" />
-                <span>帳戶設定</span>
-              </button>
-              <div className="h-px bg-gray-100 my-1" />
               <button
                 onClick={handleLogout}
                 className="w-full flex items-center gap-3 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
