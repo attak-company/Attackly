@@ -83,7 +83,7 @@ export function Header() {
             className="w-11 h-11 object-contain"
           />
           <div className="flex flex-col">
-            <span className="text-lg font-bold tracking-tight leading-tight">Digital Manager</span>
+            <span className="text-lg font-bold tracking-tight leading-tight">Attakly</span>
             <span className="text-xs text-gray-400 tracking-wide">數位店長</span>
           </div>
         </div>
