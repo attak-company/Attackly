@@ -1,6 +1,6 @@
 "use client";
 
-import { Bell, ChevronDown, User, LogOut, UserPlus, Power } from "lucide-react";
+import { Bell, ChevronDown, User, LogOut, UserPlus, Power, Headphones, BookOpen } from "lucide-react";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
@@ -102,6 +102,24 @@ export function Header() {
           </span>
         </button>
 
+        {/* Customer Support */}
+        <button
+          onClick={() => router.push('/dashboard/settings?tab=other&sub=support')}
+          className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-md transition-all"
+          title="客服"
+        >
+          <Headphones className="h-5 w-5" />
+        </button>
+
+        {/* User Manual */}
+        <button
+          onClick={() => router.push('/dashboard/settings?tab=other&sub=manual')}
+          className="p-2 text-white/80 hover:text-white hover:bg-white/10 rounded-md transition-all"
+          title="教學手冊"
+        >
+          <BookOpen className="h-5 w-5" />
+        </button>
+
         {/* Notifications */}
         <div className="relative">
           <button
@@ -122,11 +140,28 @@ export function Header() {
                 <h6 className="font-semibold text-sm text-gray-900">通知</h6>
               </div>
               <div className="max-h-80 overflow-y-auto">
-                <div className="p-4 hover:bg-gray-50 cursor-pointer transition-colors border-b last:border-0">
+                <div
+                  onClick={() => {
+                    setShowNotifications(false);
+                    router.push('/dashboard/settings?tab=other&sub=notification');
+                  }}
+                  className="p-4 hover:bg-gray-50 cursor-pointer transition-colors border-b last:border-0"
+                >
                   <p className="text-sm font-semibold">系統通知</p>
                   <p className="text-sm text-gray-500 mt-1">歡迎使用數位店長系統</p>
                   <p className="text-xs text-gray-400 mt-2">剛剛</p>
                 </div>
+              </div>
+              <div className="p-3 border-t">
+                <button
+                  onClick={() => {
+                    setShowNotifications(false);
+                    router.push('/dashboard/settings?tab=other&sub=notification');
+                  }}
+                  className="w-full text-center text-sm text-blue-600 hover:text-blue-700 hover:underline transition-colors"
+                >
+                  顯示完整通知
+                </button>
               </div>
             </div>
           )}

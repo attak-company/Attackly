@@ -1,18 +1,40 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { Key, Save, Copy, Check, Bot, Plus, X, Store, MapPin, Phone, Building2, Package, FileText, User, Database, Eye, EyeOff, Pen } from "lucide-react";
+import { useSearchParams } from "next/navigation";
+import { Key, Save, Copy, Check, Bot, Plus, X, Store, MapPin, Phone, Building2, Package, FileText, User, Database, Eye, EyeOff, Pen, Calendar, ExternalLink, MoreHorizontal, Headphones, BookOpen, Bell, Play } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 
-type MainTabType = 'account' | 'ai' | 'basic' | 'vector';
-type SubTabType = 'line' | 'ai_agent' | 'store' | 'services' | 'faq' | 'staff';
+type MainTabType = 'account' | 'basic' | 'third_party' | 'ai' | 'other';
+type SubTabType = 'line' | 'ai_agent' | 'store' | 'services' | 'faq' | 'staff' | 'appointment' | 'notification' | 'support' | 'manual';
 
 export default function SettingsPage() {
+  const searchParams = useSearchParams();
   const [activeMainTab, setActiveMainTab] = useState<MainTabType>('account');
-  const [activeSubTab, setActiveSubTab] = useState<SubTabType>('line');
-  const [expandedMainTab, setExpandedMainTab] = useState<MainTabType | null>('ai');
+  const [activeSubTab, setActiveSubTab] = useState<SubTabType>('ai_agent');
+  const [expandedMainTab, setExpandedMainTab] = useState<MainTabType | null>('account');
   const [loading, setLoading] = useState(true);
   const supabase = createClient();
+
+  // Handle URL parameters for tab/sub-tab navigation
+  useEffect(() => {
+    const tab = searchParams.get('tab') as MainTabType;
+    const sub = searchParams.get('sub') as SubTabType;
+    if (tab && sub) {
+      setActiveMainTab(tab);
+      setActiveSubTab(sub);
+      setExpandedMainTab(null);
+    }
+  }, [searchParams]);
+
+  // Notification List
+  const [notifications, setNotifications] = useState([
+    { id: 1, title: '系統通知', message: '歡迎使用數位店長系統', time: '剛剛', read: false },
+    { id: 2, title: '新預約', message: '客戶張三預約了剪髮服務', time: '10分鐘前', read: false },
+    { id: 3, title: '預約提醒', message: '客戶李四的預約將在1小時後開始', time: '1小時前', read: true },
+    { id: 4, title: '取消預約', message: '客戶王五取消了預約', time: '2小時前', read: true },
+    { id: 5, title: '系統更新', message: '系統已更新至最新版本', time: '昨天', read: true },
+  ]);
 
   // LINE Settings
   const [lineConfig, setLineConfig] = useState({
@@ -70,9 +92,17 @@ export default function SettingsPage() {
   const [storeUploading, setStoreUploading] = useState(false);
 
   // Staff Settings
-  const [staffList, setStaffList] = useState<Array<{ id: string; name: string; phone: string; email: string; role: string }>>([]);
+  const [staffList, setStaffList] = useState<Array<{ id: string; name: string; phone: string; role: string; concurrentServiceCount: number; description: string; color: string; collapsed: boolean; specialty?: string }>>([]);
   const [staffSaving, setStaffSaving] = useState(false);
   const [staffSaveSuccess, setStaffSaveSuccess] = useState(false);
+  const [deleteStaffId, setDeleteStaffId] = useState<string | null>(null);
+
+  const colorOptions = [
+    "#FF0000", "#FF4500", "#FF6347", "#FF7F50", "#FF8C00", "#FFA500",
+    "#FFD700", "#FFFF00", "#ADFF2F", "#32CD32", "#00FF00", "#00FA9A",
+    "#00FFFF", "#00BFFF", "#1E90FF", "#0000FF", "#4169E1", "#6495ED",
+    "#8A2BE2", "#9400D3", "#4B0082", "#D3D3D3", "#696969", "#000000"
+  ];
 
   // Service Categories Settings
   const [categories, setCategories] = useState<Array<{ id: string; name: string }>>([]);
@@ -100,6 +130,7 @@ export default function SettingsPage() {
     duration: 30,
     category: ""
   });
+  const [serviceDropdownId, setServiceDropdownId] = useState<string | null>(null);
 
   // Account Settings
   const [usernameForm, setUsernameForm] = useState({
@@ -125,6 +156,19 @@ export default function SettingsPage() {
 
   // Refs for click outside detection
   const tabRefs = useRef<Record<MainTabType, HTMLElement | null>>({} as Record<MainTabType, HTMLElement | null>);
+  const serviceDropdownRef = useRef<HTMLDivElement | null>(null);
+
+  // Close service dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (serviceDropdownRef.current && !serviceDropdownRef.current.contains(event.target as Node)) {
+        setServiceDropdownId(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -200,7 +244,7 @@ export default function SettingsPage() {
             }
 
             if (userData.staff_list) {
-              setStaffList(userData.staff_list);
+              setStaffList(userData.staff_list.map((staff: any) => ({ ...staff, collapsed: true })));
             }
 
             if (userData.services) {
@@ -434,19 +478,64 @@ export default function SettingsPage() {
       id: Date.now().toString(),
       name: "",
       phone: "",
-      email: "",
-      role: ""
+      role: "",
+      concurrentServiceCount: 1,
+      description: "",
+      color: "#000000",
+      collapsed: false,
+      specialty: ""
     }]);
   };
 
   const removeStaff = (id: string) => {
-    setStaffList(staffList.filter(staff => staff.id !== id));
+    setDeleteStaffId(id);
   };
 
-  const updateStaff = (id: string, field: string, value: string) => {
+  const confirmDeleteStaff = async () => {
+    if (deleteStaffId) {
+      const updatedList = staffList.filter(staff => staff.id !== deleteStaffId);
+      setStaffList(updatedList);
+      setDeleteStaffId(null);
+
+      // Save to database
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { error } = await supabase
+          .from('users')
+          .update({
+            staff_list: updatedList
+          })
+          .eq('id', user.id);
+
+        if (error) console.error("Error deleting staff:", error);
+      } catch (error) {
+        console.error("Error deleting staff:", error);
+      }
+    }
+  };
+
+  const cancelDeleteStaff = () => {
+    setDeleteStaffId(null);
+  };
+
+  const updateStaff = (id: string, field: string, value: string | number) => {
     setStaffList(staffList.map(staff =>
       staff.id === id ? { ...staff, [field]: value } : staff
     ));
+  };
+
+  const toggleStaffCollapse = (id: string) => {
+    setStaffList(staffList.map(staff =>
+      staff.id === id ? { ...staff, collapsed: !staff.collapsed } : staff
+    ));
+  };
+
+  const isStaffValid = (staff: { id: string; name: string; phone: string; role: string; description: string; specialty?: string }) => {
+    const hasRequiredFields = staff.name.trim() !== "" && staff.phone.trim() !== "" && staff.role.trim() !== "" && staff.description.trim() !== "" && staff.specialty?.trim() !== "";
+    const isDuplicateName = staffList.some(s => s.id !== staff.id && s.name.trim() === staff.name.trim());
+    return hasRequiredFields && !isDuplicateName;
   };
 
   const handleStaffSave = async () => {
@@ -465,6 +554,9 @@ export default function SettingsPage() {
         .eq('id', user.id);
 
       if (error) throw error;
+
+      // Collapse all staff cards after saving
+      setStaffList(staffList.map(staff => ({ ...staff, collapsed: true })));
 
       setStaffSaveSuccess(true);
       setTimeout(() => setStaffSaveSuccess(false), 2000);
@@ -721,6 +813,42 @@ export default function SettingsPage() {
         category: item.category
       });
       setShowAddServiceForm(true);
+      setServiceDropdownId(null);
+    }
+  };
+
+  const handleCopyService = async (id: string) => {
+    const item = serviceItems.find(i => i.id === id);
+    if (item) {
+      const newItem = {
+        id: Date.now().toString(),
+        name: `${item.name} (複製)`,
+        description: item.description,
+        price: item.price,
+        duration: item.duration,
+        category: item.category
+      };
+      const updatedItems = [...serviceItems, newItem];
+      setServiceItems(updatedItems);
+
+      // Save to database
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { error } = await supabase
+          .from('users')
+          .update({
+            services: updatedItems
+          })
+          .eq('id', user.id);
+
+        if (error) console.error("Error copying service:", error);
+      } catch (error) {
+        console.error("Error copying service:", error);
+      }
+
+      setServiceDropdownId(null);
     }
   };
 
@@ -881,24 +1009,30 @@ export default function SettingsPage() {
 
   const mainTabs = [
     { id: 'account' as MainTabType, label: '帳號設定', icon: User },
+    { id: 'basic' as MainTabType, label: '基本設定', icon: Store },
+    { id: 'third_party' as MainTabType, label: '第三方服務設定', icon: ExternalLink },
     { id: 'ai' as MainTabType, label: '人工智慧設定', icon: Bot },
-    { id: 'basic' as MainTabType, label: '基本資訊設定', icon: Store },
-    { id: 'vector' as MainTabType, label: '向量資訊設定', icon: Database },
+    { id: 'other' as MainTabType, label: '其他', icon: MoreHorizontal },
   ];
 
   const subTabsConfig: Record<MainTabType, { id: SubTabType, label: string, icon: any }[]> = {
     account: [],
-    ai: [
-      { id: 'line' as SubTabType, label: 'LINE設定', icon: Key },
-      { id: 'ai_agent' as SubTabType, label: 'AI客服設定', icon: Bot },
-    ],
     basic: [
       { id: 'store' as SubTabType, label: '店家設定', icon: Store },
       { id: 'staff' as SubTabType, label: '員工設定', icon: User },
       { id: 'services' as SubTabType, label: '服務設定', icon: Package },
+      { id: 'appointment' as SubTabType, label: '預約設定', icon: Calendar },
     ],
-    vector: [
-      { id: 'faq' as SubTabType, label: '知識庫管理', icon: FileText },
+    third_party: [
+      { id: 'line' as SubTabType, label: 'LINE設定', icon: Key },
+    ],
+    ai: [
+      { id: 'ai_agent' as SubTabType, label: 'AI客服設定', icon: Bot },
+    ],
+    other: [
+      { id: 'notification' as SubTabType, label: '通知', icon: Bell },
+      { id: 'manual' as SubTabType, label: '教學', icon: BookOpen },
+      { id: 'support' as SubTabType, label: '客服', icon: Headphones },
     ],
   };
 
@@ -1145,7 +1279,7 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {activeMainTab === 'ai' && activeSubTab === 'line' && (
+        {activeMainTab === 'third_party' && activeSubTab === 'line' && (
           <div className="space-y-6">
             <div className="flex items-center mb-4">
               <Key className="w-5 h-5 text-black mr-2" />
@@ -1530,7 +1664,7 @@ export default function SettingsPage() {
             </div>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-900 mb-2">店家名稱</label>
+                <label className="block text-sm font-medium text-gray-900 mb-2">店家名稱 <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   value={storeConfig.storeName}
@@ -1540,17 +1674,18 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-900 mb-2">店家類型</label>
-                <input
-                  type="text"
+                <label className="block text-sm font-medium text-gray-900 mb-2">店家類型 <span className="text-red-500">*</span></label>
+                <select
                   value={storeConfig.storeType}
                   onChange={(e) => setStoreConfig(prev => ({ ...prev, storeType: e.target.value }))}
                   className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 outline-none focus:border-black focus:ring-1 focus:ring-black transition-all"
-                  placeholder="請輸入店家類型"
-                />
+                >
+                  <option value="">請選擇店家類型</option>
+                  <option value="美甲">美甲</option>
+                </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-900 mb-2">店家簡介</label>
+                <label className="block text-sm font-medium text-gray-900 mb-2">店家簡介 <span className="text-red-500">*</span></label>
                 <textarea
                   value={storeConfig.storeDescription}
                   onChange={(e) => setStoreConfig(prev => ({ ...prev, storeDescription: e.target.value }))}
@@ -1560,7 +1695,7 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-900 mb-2">電話</label>
+                <label className="block text-sm font-medium text-gray-900 mb-2">電話 <span className="text-red-500">*</span></label>
                 <input
                   type="tel"
                   value={storeConfig.phone}
@@ -1570,7 +1705,7 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-900 mb-2">地址</label>
+                <label className="block text-sm font-medium text-gray-900 mb-2">地址 <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   value={storeConfig.address}
@@ -1592,37 +1727,52 @@ export default function SettingsPage() {
               <div>
                 <label className="block text-sm font-medium text-gray-900 mb-2">店家位置圖片</label>
                 <div className="space-y-3">
-                  {storeConfig.storeLocationImage && (
-                    <div className="relative">
-                      <img
-                        src={storeConfig.storeLocationImage}
-                        alt="店家位置"
-                        className="w-full h-48 object-cover rounded-lg border border-gray-200"
-                      />
-                      <button
-                        onClick={() => setStoreConfig(prev => ({ ...prev, storeLocationImage: '' }))}
-                        className="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-md hover:bg-red-600 transition-colors"
-                      >
-                        <X className="w-4 h-4" />
-                      </button>
-                    </div>
-                  )}
+                  <div
+                    onClick={() => !storeConfig.storeLocationImage && document.getElementById('storeLocationImageInput')?.click()}
+                    className={`relative cursor-pointer border-2 border-dashed border-gray-300 rounded-lg flex items-center justify-center ${storeConfig.storeLocationImage ? 'border-solid border-gray-200 p-0 inline-block' : 'p-12 hover:border-gray-400 transition-colors'}`}
+                  >
+                    {storeConfig.storeLocationImage ? (
+                      <>
+                        <img
+                          src={storeConfig.storeLocationImage}
+                          alt="店家位置"
+                          className="max-w-sm rounded-lg"
+                          style={{ maxHeight: '250px' }}
+                        />
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setStoreConfig(prev => ({ ...prev, storeLocationImage: '' }));
+                          }}
+                          className="absolute top-2 right-2 bg-red-500 text-white p-1.5 rounded-md hover:bg-red-600 transition-colors"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </>
+                    ) : (
+                      <div className="text-center">
+                        <Plus className="w-12 h-12 text-gray-400 mx-auto mb-2" />
+                        <p className="text-sm text-gray-500">點擊上傳圖片</p>
+                      </div>
+                    )}
+                  </div>
                   <input
+                    id="storeLocationImageInput"
                     type="file"
                     accept="image/*"
                     onChange={handleStoreImageUpload}
                     disabled={storeUploading}
-                    className="flex-1 px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 outline-none focus:border-black focus:ring-1 focus:ring-black transition-all file:mr-4 file:py-1 file:px-3 file:rounded-md file:border-0 file:bg-black file:text-white file:text-sm file:cursor-pointer disabled:opacity-50"
+                    className="hidden"
                   />
                 </div>
               </div>
               <div className="flex justify-end pt-4">
                 <button
                   onClick={handleStoreSave}
-                  disabled={storeSaving}
-                  className="flex items-center gap-2 bg-black text-white px-6 py-2.5 rounded-lg font-bold hover:bg-gray-800 transition-all disabled:bg-gray-400"
+                  disabled={storeSaving || !storeConfig.storeName.trim() || !storeConfig.storeType || !storeConfig.storeDescription.trim() || !storeConfig.phone.trim() || !storeConfig.address.trim()}
+                  className="flex items-center gap-2 bg-black text-white px-6 py-2.5 rounded-lg font-bold hover:bg-gray-800 transition-all disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
-                  {storeSaving ? '儲存中...' : storeSaveSuccess ? <><Check className="w-4 h-4" />已儲存</> : <><Save className="w-4 h-4" />儲存變更</>}
+                  {storeSaving ? '儲存中...' : storeSaveSuccess ? <><Check className="w-4 h-4" />已儲存</> : <><Save className="w-4 h-4" />儲存</>}
                 </button>
               </div>
             </div>
@@ -1643,58 +1793,149 @@ export default function SettingsPage() {
               ) : (
                 <div className="space-y-3">
                   {staffList.map((staff, index) => (
-                    <div key={staff.id} className="bg-white border border-gray-200 rounded-lg p-4 space-y-3">
-                      <div className="flex justify-between items-center">
-                        <h4 className="font-medium text-gray-900">人員 {index + 1}</h4>
-                        <button
-                          onClick={() => removeStaff(staff.id)}
-                          className="text-red-500 hover:text-red-700 transition-colors"
-                        >
-                          <X className="w-5 h-5" />
-                        </button>
-                      </div>
-                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-900 mb-1">姓名</label>
-                          <input
-                            type="text"
-                            value={staff.name}
-                            onChange={(e) => updateStaff(staff.id, 'name', e.target.value)}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:outline-none text-gray-900 transition-colors"
-                            placeholder="請輸入姓名"
-                          />
+                    <div key={staff.id} className="bg-white border border-gray-200 rounded-lg overflow-hidden">
+                      {staff.collapsed ? (
+                        // Collapsed view
+                        <div className="flex items-center justify-between p-4">
+                          <div className="flex items-center gap-3">
+                            <div
+                              className="w-10 h-10 rounded-full border-2"
+                              style={{ backgroundColor: staff.color, borderColor: 'black' }}
+                            />
+                            <div>
+                              <h4 className="font-medium text-gray-900">{staff.name || "未命名員工"}</h4>
+                              <p className="text-sm text-gray-600">{staff.role || "未填寫職位"}</p>
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              onClick={() => toggleStaffCollapse(staff.id)}
+                              className="p-2 text-gray-600 hover:text-gray-900 transition-colors"
+                              title="展開"
+                            >
+                              <Pen className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => removeStaff(staff.id)}
+                              className="p-2 text-red-500 hover:text-red-700 transition-colors"
+                            >
+                              <X className="w-5 h-5" />
+                            </button>
+                          </div>
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-900 mb-1">電話</label>
-                          <input
-                            type="tel"
-                            value={staff.phone}
-                            onChange={(e) => updateStaff(staff.id, 'phone', e.target.value)}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:outline-none text-gray-900 transition-colors"
-                            placeholder="請輸入電話"
-                          />
+                      ) : (
+                        // Expanded view
+                        <div className="p-4 space-y-3">
+                          <div className="flex justify-between items-center">
+                            <h4 className="font-medium text-gray-900">{staff.name || "未命名員工"}</h4>
+                            <button
+                              onClick={() => removeStaff(staff.id)}
+                              className="text-red-500 hover:text-red-700 transition-colors"
+                            >
+                              <X className="w-5 h-5" />
+                            </button>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-900 mb-1">姓名 <span className="text-red-500">*</span></label>
+                              <input
+                                type="text"
+                                value={staff.name}
+                                onChange={(e) => updateStaff(staff.id, 'name', e.target.value)}
+                                className={`w-full px-4 py-2 border rounded-lg focus:ring-2 focus:outline-none text-gray-900 transition-colors ${staff.name.trim() !== "" && staffList.some(s => s.id !== staff.id && s.name.trim() === staff.name.trim()) ? "border-red-500" : "border-gray-300"}`}
+                                placeholder="請輸入姓名"
+                              />
+                              {staff.name.trim() !== "" && staffList.some(s => s.id !== staff.id && s.name.trim() === staff.name.trim()) && (
+                                <p className="text-red-500 text-xs mt-1">此員工姓名已存在</p>
+                              )}
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-900 mb-1">電話 <span className="text-red-500">*</span></label>
+                              <input
+                                type="tel"
+                                value={staff.phone}
+                                onChange={(e) => updateStaff(staff.id, 'phone', e.target.value)}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:outline-none text-gray-900 transition-colors"
+                                placeholder="請輸入電話"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-900 mb-1">職位 <span className="text-red-500">*</span></label>
+                              <input
+                                type="text"
+                                value={staff.role}
+                                onChange={(e) => updateStaff(staff.id, 'role', e.target.value)}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:outline-none text-gray-900 transition-colors"
+                                placeholder="請輸入職位"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-900 mb-1">同時服務數量</label>
+                              <input
+                                type="number"
+                                min="1"
+                                max="99"
+                                value={staff.concurrentServiceCount}
+                                onChange={(e) => {
+                                  const value = parseInt(e.target.value) || 1;
+                                  const clampedValue = Math.min(99, Math.max(1, value));
+                                  updateStaff(staff.id, 'concurrentServiceCount', clampedValue);
+                                }}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:outline-none text-gray-900 transition-colors"
+                                placeholder="1-99"
+                              />
+                              <p className="text-xs text-gray-500 mt-1">範圍：1-99</p>
+                            </div>
+                            <div className="md:col-span-2">
+                              <label className="block text-sm font-medium text-gray-900 mb-1">人員介紹 <span className="text-red-500">*</span></label>
+                              <textarea
+                                value={staff.description}
+                                onChange={(e) => updateStaff(staff.id, 'description', e.target.value)}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:outline-none text-gray-900 transition-colors resize-none"
+                                placeholder="請輸入人員介紹"
+                                rows={3}
+                              />
+                            </div>
+                            <div className="md:col-span-2">
+                              <label className="block text-sm font-medium text-gray-900 mb-1">專長 <span className="text-red-500">*</span></label>
+                              <textarea
+                                value={staff.specialty || ''}
+                                onChange={(e) => updateStaff(staff.id, 'specialty', e.target.value)}
+                                className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:outline-none text-gray-900 transition-colors resize-none"
+                                placeholder="請輸入擅長的項目（如：日式美甲、法式美甲、光療等）"
+                                rows={2}
+                              />
+                            </div>
+                            <div className="md:col-span-2">
+                              <label className="block text-sm font-medium text-gray-900 mb-2">自訂人員顏色</label>
+                              <div className="grid grid-cols-12 gap-x-0 gap-y-3">
+                                {colorOptions.map((color) => (
+                                  <button
+                                    key={color}
+                                    onClick={() => updateStaff(staff.id, 'color', color)}
+                                    className="relative w-6 h-6 rounded-full border-2 transition-all hover:border-gray-400"
+                                    style={{ backgroundColor: color, borderColor: staff.color === color ? 'black' : 'transparent' }}
+                                    title={color}
+                                  >
+                                    {staff.color === color && (
+                                      <Check className="absolute inset-0 m-auto w-3 h-3 text-white" strokeWidth={3} />
+                                    )}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex justify-end pt-2">
+                            <button
+                              onClick={handleStaffSave}
+                              disabled={staffSaving || !isStaffValid(staff)}
+                              className="flex items-center gap-2 bg-black text-white px-4 py-2 rounded-lg font-medium hover:bg-gray-800 transition-all disabled:bg-gray-400 disabled:cursor-not-allowed text-sm"
+                            >
+                              {staffSaving ? '儲存中...' : staffSaveSuccess ? <><Check className="w-4 h-4" />已儲存</> : <><Save className="w-4 h-4" />儲存</>}
+                            </button>
+                          </div>
                         </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-900 mb-1">Email</label>
-                          <input
-                            type="email"
-                            value={staff.email}
-                            onChange={(e) => updateStaff(staff.id, 'email', e.target.value)}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:outline-none text-gray-900 transition-colors"
-                            placeholder="請輸入 Email"
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-900 mb-1">職位</label>
-                          <input
-                            type="text"
-                            value={staff.role}
-                            onChange={(e) => updateStaff(staff.id, 'role', e.target.value)}
-                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:outline-none text-gray-900 transition-colors"
-                            placeholder="請輸入職位"
-                          />
-                        </div>
-                      </div>
+                      )}
                     </div>
                   ))}
                 </div>
@@ -1706,15 +1947,26 @@ export default function SettingsPage() {
                 <Plus className="w-4 h-4" />
                 新增員工
               </button>
-              {staffList.length > 0 && (
-                <div className="flex justify-end pt-4">
-                  <button
-                    onClick={handleStaffSave}
-                    disabled={staffSaving}
-                    className="flex items-center gap-2 bg-black text-white px-6 py-2.5 rounded-lg font-bold hover:bg-gray-800 transition-all disabled:bg-gray-400"
-                  >
-                    {staffSaving ? '儲存中...' : staffSaveSuccess ? <><Check className="w-4 h-4" />已儲存</> : <><Save className="w-4 h-4" />儲存變更</>}
-                  </button>
+              {deleteStaffId && (
+                <div className="fixed inset-0 bg-black/20 flex items-center justify-center z-50 backdrop-blur-sm">
+                  <div className="bg-white rounded-lg p-6 max-w-sm w-full mx-4">
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">確認刪除</h3>
+                    <p className="text-gray-600 mb-6">確定要刪除此員工嗎？此操作無法復原。</p>
+                    <div className="flex justify-end gap-3">
+                      <button
+                        onClick={cancelDeleteStaff}
+                        className="px-4 py-2 border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
+                      >
+                        取消
+                      </button>
+                      <button
+                        onClick={confirmDeleteStaff}
+                        className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 transition-colors"
+                      >
+                        確認刪除
+                      </button>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -1753,9 +2005,9 @@ export default function SettingsPage() {
                   </button>
                 </div>
 
-                <div className="space-y-6">
+                <div>
                   {/* Add Service Item Form */}
-                  <div className="bg-white border border-gray-200 rounded-lg p-6">
+                  <div className="bg-white border border-gray-200 rounded-t-lg p-6">
                     {!showAddServiceForm ? (
                       <button
                         onClick={() => setShowAddServiceForm(true)}
@@ -1794,27 +2046,27 @@ export default function SettingsPage() {
                             rows={3}
                           />
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
-                          <div>
-                            <label className="block text-sm font-medium text-gray-900 mb-1">價格 <span className="text-red-500">*</span></label>
-                            <input
-                              type="number"
-                              value={newService.price}
-                              onChange={(e) => setNewService({ ...newService, price: Number(e.target.value) })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:outline-none text-gray-900 transition-colors"
-                              placeholder="請輸入價格"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-sm font-medium text-gray-900 mb-1">時長（分鐘） <span className="text-red-500">*</span></label>
-                            <input
-                              type="number"
-                              value={newService.duration}
-                              onChange={(e) => setNewService({ ...newService, duration: Number(e.target.value) })}
-                              className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:outline-none text-gray-900 transition-colors"
-                              placeholder="請輸入時長"
-                            />
-                          </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-900 mb-1">價格 (NT$) <span className="text-red-500">*</span></label>
+                          <input
+                            type="number"
+                            min="0"
+                            value={newService.price}
+                            onChange={(e) => setNewService({ ...newService, price: parseFloat(e.target.value) || 0 })}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:outline-none text-gray-900 transition-colors"
+                            placeholder="請輸入價格"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-900 mb-1">時長 (分鐘) <span className="text-red-500">*</span></label>
+                          <input
+                            type="number"
+                            min="1"
+                            value={newService.duration}
+                            onChange={(e) => setNewService({ ...newService, duration: parseInt(e.target.value) || 1 })}
+                            className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:outline-none text-gray-900 transition-colors"
+                            placeholder="請輸入時長"
+                          />
                         </div>
                         <div>
                           <label className="block text-sm font-medium text-gray-900 mb-1">分類</label>
@@ -1833,6 +2085,7 @@ export default function SettingsPage() {
                           <button
                             onClick={() => {
                               setShowAddServiceForm(false);
+                              setEditingServiceId(null);
                               setNewService({ name: "", description: "", price: 0, duration: 30, category: "" });
                             }}
                             className="flex-1 flex items-center justify-center gap-2 px-6 py-3 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-colors"
@@ -1853,7 +2106,7 @@ export default function SettingsPage() {
 
                   {/* Service Items List */}
                   {serviceItems.length > 0 && (
-                    <div className="bg-white border border-gray-200 rounded-lg p-6">
+                    <div className="bg-white border-t border-gray-200 rounded-b-lg p-6">
                       <h4 className="font-bold text-gray-900 mb-4">服務項目列表</h4>
                       <div className="space-y-3">
                         {serviceItems
@@ -1879,13 +2132,31 @@ export default function SettingsPage() {
                                     )}
                                   </div>
                                 </div>
-                                <div className="flex gap-1">
+                                <div className="flex gap-1 relative">
                                   <button
-                                    onClick={() => handleEditService(item.id)}
+                                    onClick={() => setServiceDropdownId(serviceDropdownId === item.id ? null : item.id)}
                                     className="p-2 text-gray-600 hover:text-gray-900 transition-colors"
                                   >
                                     <Pen className="w-4 h-4" />
                                   </button>
+                                  {serviceDropdownId === item.id && (
+                                    <div ref={serviceDropdownRef} className="absolute right-8 top-0 bg-white border border-gray-200 rounded-lg shadow-lg z-10 min-w-[100px]">
+                                      <button
+                                        onClick={() => handleEditService(item.id)}
+                                        className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2"
+                                      >
+                                        <Pen className="w-4 h-4" />
+                                        編輯
+                                      </button>
+                                      <button
+                                        onClick={() => handleCopyService(item.id)}
+                                        className="w-full px-4 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 transition-colors flex items-center gap-2"
+                                      >
+                                        <Copy className="w-4 h-4" />
+                                        複製
+                                      </button>
+                                    </div>
+                                  )}
                                   <button
                                     onClick={async () => {
                                       const updatedItems = serviceItems.filter(i => i.id !== item.id);
@@ -2029,15 +2300,261 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {activeMainTab === 'vector' && activeSubTab === 'faq' && (
+        {activeMainTab === 'basic' && activeSubTab === 'appointment' && (
           <div className="space-y-6">
             <div className="flex items-center mb-4">
-              <FileText className="w-5 h-5 text-black mr-2" />
-              <h3 className="font-bold text-lg text-gray-900">知識庫管理</h3>
+              <Calendar className="w-5 h-5 text-black mr-2" />
+              <h3 className="font-bold text-lg text-gray-900">預約設定</h3>
             </div>
-            <div className="bg-gray-50 p-6 rounded-lg">
-              <p className="text-gray-600">請前往知識庫管理頁面管理 FAQ。</p>
-              <a href="/dashboard/faq" className="text-blue-600 hover:underline mt-2 inline-block">前往知識庫管理頁面 →</a>
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <p className="text-gray-600">預約設定功能開發中...</p>
+            </div>
+          </div>
+        )}
+
+        {activeMainTab === 'other' && activeSubTab === 'notification' && (
+          <div className="space-y-6">
+            <div className="flex items-center mb-4">
+              <Bell className="w-5 h-5 text-black mr-2" />
+              <h3 className="font-bold text-lg text-gray-900">通知</h3>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <div className="space-y-3">
+                {notifications.map((notification) => (
+                  <div
+                    key={notification.id}
+                    className={`p-4 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors cursor-pointer ${!notification.read ? 'bg-blue-50 border-blue-200' : ''}`}
+                  >
+                    <div className="flex justify-between items-start">
+                      <div className="flex-1">
+                        <p className="font-semibold text-gray-900">{notification.title}</p>
+                        <p className="text-sm text-gray-600 mt-1">{notification.message}</p>
+                        <p className="text-xs text-gray-400 mt-2">{notification.time}</p>
+                      </div>
+                      {!notification.read && (
+                        <div className="ml-4">
+                          <div className="w-2 h-2 bg-blue-600 rounded-full"></div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeMainTab === 'other' && activeSubTab === 'support' && (
+          <div className="space-y-6">
+            <div className="flex items-center mb-4">
+              <Headphones className="w-5 h-5 text-black mr-2" />
+              <h3 className="font-bold text-lg text-gray-900">客服</h3>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <div className="space-y-4">
+                <div>
+                  <h4 className="font-semibold text-gray-900 mb-2">聯絡我們</h4>
+                  <p className="text-gray-600 mb-4">如果您有任何問題或需要協助，請透過以下方式聯絡我們：</p>
+                </div>
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 bg-green-500 rounded-lg flex items-center justify-center">
+                      <span className="text-white font-bold">L</span>
+                    </div>
+                    <div>
+                      <p className="text-sm text-gray-500">LINE ID</p>
+                      <p className="font-semibold text-gray-900">@436ejedc</p>
+                    </div>
+                  </div>
+                </div>
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                  <p className="text-sm text-blue-800">
+                    <strong>服務時間：</strong>週一至週五 9:00-18:00
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {activeMainTab === 'other' && activeSubTab === 'manual' && (
+          <div className="space-y-6">
+            <div className="flex items-center mb-4">
+              <BookOpen className="w-5 h-5 text-black mr-2" />
+              <h3 className="font-bold text-lg text-gray-900">教學</h3>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              {/* Search Bar */}
+              <div className="mb-6">
+                <input
+                  type="text"
+                  placeholder="搜尋教學內容..."
+                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:outline-none text-gray-900 transition-colors"
+                />
+              </div>
+
+              {/* Tutorial Categories */}
+              <div className="space-y-6">
+                {/* Getting Started */}
+                <div>
+                  <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                    快速開始
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="border border-gray-200 rounded-lg p-4 hover:border-gray-300 hover:shadow-md transition-all cursor-pointer">
+                      <div className="aspect-video bg-gray-100 rounded-lg mb-3 flex items-center justify-center">
+                        <Play className="w-12 h-12 text-gray-400" />
+                      </div>
+                      <h5 className="font-medium text-gray-900 mb-1">系統介紹</h5>
+                      <p className="text-sm text-gray-600">了解數位店長系統的基本功能</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="text-xs text-gray-500">5 分鐘</span>
+                        <span className="text-xs text-green-600">已完成</span>
+                      </div>
+                    </div>
+                    <div className="border border-gray-200 rounded-lg p-4 hover:border-gray-300 hover:shadow-md transition-all cursor-pointer">
+                      <div className="aspect-video bg-gray-100 rounded-lg mb-3 flex items-center justify-center">
+                        <Play className="w-12 h-12 text-gray-400" />
+                      </div>
+                      <h5 className="font-medium text-gray-900 mb-1">建立店家資料</h5>
+                      <p className="text-sm text-gray-600">設定您的店家基本資訊</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="text-xs text-gray-500">8 分鐘</span>
+                        <span className="text-xs text-gray-400">未開始</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Staff Management */}
+                <div>
+                  <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                    員工管理
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="border border-gray-200 rounded-lg p-4 hover:border-gray-300 hover:shadow-md transition-all cursor-pointer">
+                      <div className="aspect-video bg-gray-100 rounded-lg mb-3 flex items-center justify-center">
+                        <Play className="w-12 h-12 text-gray-400" />
+                      </div>
+                      <h5 className="font-medium text-gray-900 mb-1">新增員工</h5>
+                      <p className="text-sm text-gray-600">如何新增和管理員工資料</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="text-xs text-gray-500">6 分鐘</span>
+                        <span className="text-xs text-gray-400">未開始</span>
+                      </div>
+                    </div>
+                    <div className="border border-gray-200 rounded-lg p-4 hover:border-gray-300 hover:shadow-md transition-all cursor-pointer">
+                      <div className="aspect-video bg-gray-100 rounded-lg mb-3 flex items-center justify-center">
+                        <Play className="w-12 h-12 text-gray-400" />
+                      </div>
+                      <h5 className="font-medium text-gray-900 mb-1">員工排班</h5>
+                      <p className="text-sm text-gray-600">設定員工的工作時間</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="text-xs text-gray-500">10 分鐘</span>
+                        <span className="text-xs text-gray-400">未開始</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Service Management */}
+                <div>
+                  <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <span className="w-2 h-2 bg-purple-500 rounded-full"></span>
+                    服務管理
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="border border-gray-200 rounded-lg p-4 hover:border-gray-300 hover:shadow-md transition-all cursor-pointer">
+                      <div className="aspect-video bg-gray-100 rounded-lg mb-3 flex items-center justify-center">
+                        <Play className="w-12 h-12 text-gray-400" />
+                      </div>
+                      <h5 className="font-medium text-gray-900 mb-1">新增服務項目</h5>
+                      <p className="text-sm text-gray-600">建立和管理您的服務項目</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="text-xs text-gray-500">7 分鐘</span>
+                        <span className="text-xs text-gray-400">未開始</span>
+                      </div>
+                    </div>
+                    <div className="border border-gray-200 rounded-lg p-4 hover:border-gray-300 hover:shadow-md transition-all cursor-pointer">
+                      <div className="aspect-video bg-gray-100 rounded-lg mb-3 flex items-center justify-center">
+                        <Play className="w-12 h-12 text-gray-400" />
+                      </div>
+                      <h5 className="font-medium text-gray-900 mb-1">服務分類</h5>
+                      <p className="text-sm text-gray-600">組織和管理服務分類</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="text-xs text-gray-500">5 分鐘</span>
+                        <span className="text-xs text-gray-400">未開始</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Booking Management */}
+                <div>
+                  <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <span className="w-2 h-2 bg-orange-500 rounded-full"></span>
+                    預約管理
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="border border-gray-200 rounded-lg p-4 hover:border-gray-300 hover:shadow-md transition-all cursor-pointer">
+                      <div className="aspect-video bg-gray-100 rounded-lg mb-3 flex items-center justify-center">
+                        <Play className="w-12 h-12 text-gray-400" />
+                      </div>
+                      <h5 className="font-medium text-gray-900 mb-1">接受預約</h5>
+                      <p className="text-sm text-gray-600">如何處理和確認預約</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="text-xs text-gray-500">8 分鐘</span>
+                        <span className="text-xs text-gray-400">未開始</span>
+                      </div>
+                    </div>
+                    <div className="border border-gray-200 rounded-lg p-4 hover:border-gray-300 hover:shadow-md transition-all cursor-pointer">
+                      <div className="aspect-video bg-gray-100 rounded-lg mb-3 flex items-center justify-center">
+                        <Play className="w-12 h-12 text-gray-400" />
+                      </div>
+                      <h5 className="font-medium text-gray-900 mb-1">取消和改期</h5>
+                      <p className="text-sm text-gray-600">處理預約的取消和改期</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="text-xs text-gray-500">6 分鐘</span>
+                        <span className="text-xs text-gray-400">未開始</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Advanced Features */}
+                <div>
+                  <h4 className="font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                    <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+                    進階功能
+                  </h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="border border-gray-200 rounded-lg p-4 hover:border-gray-300 hover:shadow-md transition-all cursor-pointer">
+                      <div className="aspect-video bg-gray-100 rounded-lg mb-3 flex items-center justify-center">
+                        <Play className="w-12 h-12 text-gray-400" />
+                      </div>
+                      <h5 className="font-medium text-gray-900 mb-1">AI 客服設定</h5>
+                      <p className="text-sm text-gray-600">設定 AI 客服自動回覆</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="text-xs text-gray-500">12 分鐘</span>
+                        <span className="text-xs text-gray-400">未開始</span>
+                      </div>
+                    </div>
+                    <div className="border border-gray-200 rounded-lg p-4 hover:border-gray-300 hover:shadow-md transition-all cursor-pointer">
+                      <div className="aspect-video bg-gray-100 rounded-lg mb-3 flex items-center justify-center">
+                        <Play className="w-12 h-12 text-gray-400" />
+                      </div>
+                      <h5 className="font-medium text-gray-900 mb-1">LINE 整合</h5>
+                      <p className="text-sm text-gray-600">整合 LINE 通知功能</p>
+                      <div className="flex items-center gap-2 mt-2">
+                        <span className="text-xs text-gray-500">15 分鐘</span>
+                        <span className="text-xs text-gray-400">未開始</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         )}
