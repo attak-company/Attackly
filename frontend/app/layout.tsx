@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter, Geist } from "next/font/google";
 import "./globals.css";
 import { cn } from "@/lib/utils";
@@ -8,6 +8,7 @@ const geist = Geist({subsets:['latin'],variable:'--font-sans'});
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
+  metadataBase: new URL('https://digitalmanager.ai'),
   title: "Digital Manager - AI 數位店長",
   description: "讓商家用0技術，擁有會接單、會排程、會成交的AI客服。整合 Gemini 核心，深度學習您的價目表與知識庫，實現真正的零人力運營。",
   keywords: "AI客服, 數位店長, 自動排程, LINE客服, 商業自動化",
@@ -66,11 +67,12 @@ export const metadata: Metadata = {
       'max-snippet': -1,
     },
   },
-  viewport: {
-    width: 'device-width',
-    initialScale: 1,
-    maximumScale: 5,
-  },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 5,
 };
 
 export default function RootLayout({

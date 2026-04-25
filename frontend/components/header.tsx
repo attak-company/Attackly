@@ -12,8 +12,14 @@ export function Header() {
   const [username, setUsername] = useState<string>("用戶");
   const [notificationCount, setNotificationCount] = useState(0);
   const [aiEnabled, setAiEnabled] = useState(true);
+  const [currentTime, setCurrentTime] = useState(new Date());
   const router = useRouter();
   const supabase = createClient();
+
+  useEffect(() => {
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -70,7 +76,7 @@ export function Header() {
 
   return (
     <header className="h-16 bg-black text-white flex items-center justify-between px-6 fixed top-0 left-0 right-0 z-[3000] shadow-[0_1px_0_rgba(255,255,255,0.08)_inset]">
-      <div className="flex items-center">
+      <div className="flex items-center gap-6">
         <div className="flex items-center gap-2">
           <img 
             src="/Logo.png" 
@@ -78,8 +84,30 @@ export function Header() {
             className="w-11 h-11 object-contain"
           />
           <div className="flex flex-col">
-            <span className="text-lg font-bold tracking-tight leading-tight">Attakly</span>
+            <div className="flex items-baseline gap-1">
+              <span className="text-lg font-black tracking-tighter leading-tight">ATTAKLY</span>
+              <span className="w-1.5 h-1.5 bg-red-500 rounded-full mb-1"></span>
+            </div>
             <span className="text-xs text-gray-400 tracking-wide">數位店長</span>
+          </div>
+        </div>
+
+        {/* 分隔線 */}
+        <div className="h-8 w-[1px] bg-white/20" />
+
+        {/* 動態日期時間 */}
+        <div className="flex flex-col">
+          <div className="flex items-center gap-2">
+            <span className="text-[11px] font-bold text-white uppercase tracking-widest" suppressHydrationWarning>
+              {currentTime.getFullYear()} . {String(currentTime.getMonth() + 1).padStart(2, '0')} . {String(currentTime.getDate()).padStart(2, '0')}
+            </span>
+            <span className="text-[9px] px-1 bg-white/10 text-gray-400 rounded" suppressHydrationWarning>
+              {currentTime.toLocaleDateString('zh-TW', { weekday: 'long' })}
+            </span>
+          </div>
+          
+          <div className="text-xs font-mono font-medium text-gray-400" suppressHydrationWarning>
+            {String(currentTime.getHours()).padStart(2, '0')} : {String(currentTime.getMinutes()).padStart(2, '0')} : {String(currentTime.getSeconds()).padStart(2, '0')}
           </div>
         </div>
       </div>
