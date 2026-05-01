@@ -237,7 +237,7 @@ export default function SettingsPage() {
             .from('users')
             .select('line_channel_access_token, line_channel_secret, ai_settings, username')
             .eq('id', user.id)
-            .single();
+            .maybeSingle();
 
           if (lineData) {
             if (lineData.username) {

@@ -1,115 +1,1143 @@
 "use client";
 
-import { useState } from "react";
-import { Plus, Clock, Check, X, Search } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Plus, Check, X, Clock, Phone, MapPin, MessageCircle, AlertCircle, Bot, Search } from "lucide-react";
+import { TimePicker } from "@/components/ui/time-picker";
+import { useToast } from "@/hooks/use-toast";
+import { supabase } from "@/lib/bookingService";
+import { fetchBookingsByStatus, fetchHistoryBookings, updateBookingStatus, confirmBooking, createBooking, softDeleteBooking } from "@/lib/bookingService";
 
-const bookings = [
-  { id: 1, name: "林小美", service: "美甲保養", time: "14:00 - 15:30", date: "2024-03-21", status: "confirmed" },
-  { id: 2, name: "陳大文", service: "足部修整", time: "16:00 - 17:00", date: "2024-03-21", status: "pending" },
-  { id: 3, name: "張思思", service: "深層SPA", time: "18:00 - 20:00", date: "2024-03-21", status: "pending" },
-  { id: 4, name: "王美玲", service: "美睫造型", time: "10:00 - 11:30", date: "2024-03-22", status: "confirmed" },
-  { id: 5, name: "李建國", service: "男士護理", time: "14:00 - 15:00", date: "2024-03-22", status: "pending" },
+const customScrollbarStyles = `
+  .custom-scrollbar::-webkit-scrollbar {
+    width: 3px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-track {
+    background: transparent;
+    margin: 4px;
+  }
+  .custom-scrollbar::-webkit-scrollbar-thumb {
+    background: transparent;
+    border-radius: 10px;
+    margin: 4px;
+  }
+  .custom-scrollbar:hover::-webkit-scrollbar-thumb {
+    background: #e5e7eb;
+  }
+  .custom-scrollbar {
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+  }
+  .custom-scrollbar:hover {
+    scrollbar-color: #e5e7eb transparent;
+  }
+
+  @keyframes highlight-flash {
+    0%, 100% {
+      box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+    }
+    25%, 75% {
+      box-shadow: 0 0 0 8px rgba(239, 68, 68, 0.5);
+    }
+    50% {
+      box-shadow: 0 0 0 4px rgba(239, 68, 68, 0.3);
+    }
+  }
+
+  .highlight-flash {
+    animation: highlight-flash 1.5s ease-in-out 2;
+  }
+
+  @keyframes error-flash {
+    0% {
+      border-color: #e5e7eb;
+      box-shadow: none;
+    }
+    20% {
+      border-color: #dc2626;
+      box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.3);
+    }
+    40% {
+      border-color: #e5e7eb;
+      box-shadow: none;
+    }
+    60% {
+      border-color: #dc2626;
+      box-shadow: 0 0 0 3px rgba(220, 38, 38, 0.3);
+    }
+    80% {
+      border-color: #dc2626;
+      box-shadow: 0 0 0 2px rgba(220, 38, 38, 0.2);
+    }
+    90% {
+      border-color: #dc2626;
+      box-shadow: 0 0 0 1px rgba(220, 38, 38, 0.1);
+    }
+    100% {
+      border-color: #e5e7eb;
+      box-shadow: none;
+    }
+  }
+
+  .error-flash {
+    animation: error-flash 2s ease-in-out;
+  }
+`;
+
+interface Booking {
+  id: string;
+  customer_name: string;
+  phone: string;
+  service: string;
+  time: string;
+  date: string;
+  status: "pending" | "confirmed" | "cancelled" | "completed" | "no_show";
+  source?: "phone" | "line" | "walkin" | "manual" | "AI_Chatbot" | "Hang_Ke";
+  note?: string;
+  ai_notes?: string;
+  hasConflict?: boolean;
+  duration?: number;
+  tags?: string[];
+  email?: string;
+  start_time?: string;
+  end_time?: string;
+}
+
+// TODO: Replace with real API from settings table
+// Mock services data for service selection dropdown (synced with calendar page)
+const mockServices = [
+  { id: '1', name: '男士護理', duration: 45, price: 500, type: 'hair' },
+  { id: '2', name: '法式美甲', duration: 120, price: 1200, type: 'nail' },
+  { id: '3', name: '日式美甲', duration: 90, price: 1000, type: 'nail' },
+  { id: '4', name: '美睫嫁接', duration: 60, price: 800, type: 'eyelash' },
+  { id: '5', name: '洗剪吹', duration: 30, price: 300, type: 'hair' },
+  { id: '6', name: '染髮', duration: 150, price: 2000, type: 'hair' },
+  { id: '7', name: '燙髮', duration: 180, price: 2500, type: 'hair' },
+  { id: '8', name: '手足護理', duration: 45, price: 400, type: 'other' },
 ];
 
-export default function AppointmentsPage() {
-  const [filter, setFilter] = useState("all");
+// 服務對應的預設時長（分鐘）- 從 mockServices 生成
+const serviceDurationMap: Record<string, number> = mockServices.reduce((acc, service) => {
+  acc[service.name] = service.duration;
+  return acc;
+}, {} as Record<string, number>);
 
-  const filteredBookings = filter === "all" 
-    ? bookings 
-    : bookings.filter(b => b.status === filter);
+// 常用標籤
+const commonTags = ["新客", "VIP", "特殊注意"];
+
+export default function AppointmentsPage() {
+  const { toast } = useToast();
+  const [filter, setFilter] = useState<"pending" | "confirmed" | "history">("pending");
+  const [bookingsList, setBookingsList] = useState<Booking[]>([]);
+  const [showNewBookingModal, setShowNewBookingModal] = useState(false);
+  const [showErrorDialog, setShowErrorDialog] = useState(false);
+  const [errorMessage, setErrorMessage] = useState({ title: "", description: "" });
+  const [errorFields, setErrorFields] = useState<Set<string>>(new Set());
+  const [currentPage, setCurrentPage] = useState(0);
+  const pageSize = 20;
+
+  // 新增預約表單狀態
+  const [newBooking, setNewBooking] = useState<{
+    name: string;
+    phone: string;
+    email: string;
+    service: string;
+    time: string;
+    date: string;
+    tags: string[];
+    source: "manual";
+  }>({
+    name: "",
+    phone: "",
+    email: "",
+    service: "",
+    time: "",
+    date: "",
+    tags: [],
+    source: "manual"
+  });
+  const [customTagInput, setCustomTagInput] = useState("");
+  const [timeWarning, setTimeWarning] = useState<{ type: 'none' | 'short' | 'overlap'; message?: string }>({ type: 'none' });
+  const [suggestedEndTime, setSuggestedEndTime] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
+  const [searchTerm, setSearchTerm] = useState("");
+  const [highlightedBookingId, setHighlightedBookingId] = useState<string | null>(null);
+  const [allBookings, setAllBookings] = useState<Booking[]>([]);
+
+  // 從 Supabase 載入預約數據（根據當前分頁）
+  useEffect(() => {
+    const loadBookings = async (currentUserId: string) => {
+      setIsLoading(true);
+
+      let data;
+      if (filter === "history") {
+        data = await fetchHistoryBookings(currentPage, pageSize);
+      } else {
+        data = await fetchBookingsByStatus(filter, currentPage, pageSize);
+      }
+      setBookingsList(data);
+      setIsLoading(false);
+    };
+
+    // 使用 onAuthStateChange 監聽登入狀態
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      if (session?.user?.id) {
+        loadBookings(session.user.id);
+      } else {
+        setBookingsList([]);
+      }
+    });
+
+    // 初始加載時也嘗試獲取 session
+    const initialLoad = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.user?.id) {
+        loadBookings(session.user.id);
+      }
+    };
+    initialLoad();
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [filter, currentPage]);
+
+  // 當過濾器變更時重置頁碼
+  useEffect(() => {
+    setCurrentPage(0);
+  }, [filter]);
+
+  const [filteredBookings, setFilteredBookings] = useState<Booking[]>([]);
+
+  // 當沒有搜尋詞時，同步顯示當前分頁資料
+  useEffect(() => {
+    if (!searchTerm) {
+      setFilteredBookings(bookingsList);
+    }
+  }, [bookingsList, searchTerm]);
+
+  // 搜尋過濾 - 當有搜尋詞時，獲取所有資料並搜尋
+  useEffect(() => {
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      // 當有搜尋詞時，獲取所有資料
+      const loadAllAndSearch = async () => {
+        const [pendingData, confirmedData, historyData] = await Promise.all([
+          fetchBookingsByStatus('pending', 0, 1000),
+          fetchBookingsByStatus('confirmed', 0, 1000),
+          fetchHistoryBookings(0, 1000)
+        ]);
+        const allData = [...pendingData, ...confirmedData, ...historyData];
+        const filtered = allData.filter(booking =>
+          booking.customer_name.toLowerCase().includes(term) ||
+          booking.phone.includes(term)
+        );
+        setFilteredBookings(filtered);
+        
+        // 自動跳轉到對應分頁
+        if (filtered.length > 0) {
+          const firstMatch = filtered[0];
+          if (firstMatch.status === 'completed' || firstMatch.status === 'cancelled' || firstMatch.status === 'no_show') {
+            setFilter("history");
+          } else {
+            setFilter(firstMatch.status as "pending" | "confirmed");
+          }
+          setCurrentPage(0);
+          setHighlightedBookingId(firstMatch.id);
+          
+          // 2秒後移除高亮
+          setTimeout(() => {
+            setHighlightedBookingId(null);
+          }, 2000);
+        }
+      };
+      loadAllAndSearch();
+    }
+  }, [searchTerm]);
+
+  // 排序：在「已確認」分頁中，正在進行中的訂單置頂
+  const sortedBookings = [...filteredBookings].sort((a, b) => {
+    if (filter === "confirmed") {
+      const aInProgress = isInProgressBooking(a);
+      const bInProgress = isInProgressBooking(b);
+      if (aInProgress && !bInProgress) return -1;
+      if (!aInProgress && bInProgress) return 1;
+    }
+    // 其他情況保持原有順序（按時間）
+    return 0;
+  });
+
+  // 檢查預約是否即將到期（剩2小時內）
+  const isUrgentBooking = (booking: Booking) => {
+    if (booking.status !== 'pending') return false;
+    if (!booking.date || !booking.time) return false;
+
+    const bookingDateTime = new Date(`${booking.date}T${booking.time}`);
+    const now = new Date();
+    const timeDiff = bookingDateTime.getTime() - now.getTime();
+    const hoursDiff = timeDiff / (1000 * 60 * 60);
+
+    return hoursDiff > 0 && hoursDiff <= 2;
+  };
+
+  // 檢查預約是否正在進行中
+  const isInProgressBooking = (booking: Booking) => {
+    if (booking.status !== 'confirmed') return false;
+    if (!booking.start_time || !booking.end_time) return false;
+
+    const now = new Date();
+    const startTime = new Date(booking.start_time);
+    const endTime = new Date(booking.end_time);
+
+    return now >= startTime && now < endTime;
+  };
+
+  // 需要單獨獲取待處理數量，因為 bookingsList 只包含當前過濾器的數據
+  const [pendingCount, setPendingCount] = useState(0);
+
+  useEffect(() => {
+    const fetchPendingCount = async () => {
+      const pendingData = await fetchBookingsByStatus('pending');
+      setPendingCount(pendingData.length);
+    };
+    fetchPendingCount();
+  }, []);
+
+  // Supabase Realtime 訂閱
+  useEffect(() => {
+    const setupRealtimeSubscription = async () => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      const channel = supabase
+        .channel('bookings-changes')
+        .on(
+          'postgres_changes',
+          {
+            event: '*',
+            schema: 'public',
+            table: 'bookings',
+            filter: `user_id=eq.${user.id}`
+          },
+          async (payload) => {
+            console.log('預約資料變更:', payload);
+
+            // 重新載入當前過濾器的數據
+            let data;
+            if (filter === "history") {
+              data = await fetchHistoryBookings();
+            } else {
+              data = await fetchBookingsByStatus(filter);
+            }
+            setBookingsList(data);
+
+            // 更新待處理數量
+            const pendingData = await fetchBookingsByStatus('pending');
+            setPendingCount(pendingData.length);
+
+            // 根據事件類型顯示通知
+            if (payload.eventType === 'INSERT') {
+              const source = payload.new.source;
+              if (source === 'AI_Chatbot') {
+                toast({
+                  title: "🤖 AI 自動預約",
+                  description: "AI 幫你接到了一筆新預約！"
+                });
+              } else if (source === 'Hang_Ke') {
+                toast({
+                  title: "🔗 夾客轉導",
+                  description: "收到來自夾客的預約"
+                });
+              } else {
+                toast({
+                  title: "新預約通知",
+                  description: "收到一筆新的預約申請"
+                });
+              }
+            } else if (payload.eventType === 'UPDATE') {
+              const newStatus = payload.new.status;
+              if (newStatus === 'confirmed') {
+                toast({
+                  title: "預約已確認",
+                  description: "預約狀態已更新為已確認"
+                });
+              }
+            }
+          }
+        )
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(channel);
+      };
+    };
+
+    const cleanup = setupRealtimeSubscription();
+    return () => {
+      cleanup.then(cleanupFn => cleanupFn?.());
+    };
+  }, [filter, supabase, toast]);
+
+  const handleConfirm = async (id: string) => {
+    const result = await confirmBooking(id);
+    if (result.success) {
+      toast({
+        title: "預約已成功加入排程",
+        description: "預約狀態已更新為已確認"
+      });
+      // 重新載入數據
+      let data;
+      if (filter === "history") {
+        data = await fetchHistoryBookings();
+      } else {
+        data = await fetchBookingsByStatus(filter);
+      }
+      setBookingsList(data);
+      // 更新待處理數量
+      const pendingData = await fetchBookingsByStatus('pending');
+      setPendingCount(pendingData.length);
+    } else {
+      toast({
+        title: "確認失敗",
+        description: "無法更新預約狀態，請稍後再試"
+      });
+    }
+  };
+
+  const handleReject = async (id: string) => {
+    const result = await softDeleteBooking(id);
+    if (result.success) {
+      toast({
+        title: "預約已刪除",
+        description: "預約已成功刪除"
+      });
+      // 重新載入數據
+      let data;
+      if (filter === "history") {
+        data = await fetchHistoryBookings();
+      } else {
+        data = await fetchBookingsByStatus(filter);
+      }
+      setBookingsList(data);
+      // 更新待處理數量
+      const pendingData = await fetchBookingsByStatus('pending');
+      setPendingCount(pendingData.length);
+    } else {
+      toast({
+        title: "刪除失敗",
+        description: "無法刪除預約，請稍後再試"
+      });
+    }
+  };
+
+  const getSourceLabel = (source: string) => {
+    switch (source) {
+      case "phone": return "電話";
+      case "line": return "LINE";
+      case "walkin": return "現場";
+      case "manual": return "手動";
+      case "AI_Chatbot": return "🤖 AI 自動預約";
+      case "Hang_Ke": return "🔗 夾客轉導";
+      default: return "其他";
+    }
+  };
+
+  const getSourceStyle = (source: string) => {
+    switch (source) {
+      case "AI_Chatbot":
+        return "bg-blue-100 text-blue-700 border border-blue-200";
+      case "Hang_Ke":
+        return "bg-purple-100 text-purple-700 border border-purple-200";
+      case "manual":
+        return "bg-gray-100 text-gray-700 border border-gray-200";
+      default:
+        return "bg-[#F4F4F5] text-[#1A1A1A]";
+    }
+  };
+
+  // 切換標籤
+  const toggleTag = (tag: string) => {
+    setNewBooking(prev => ({
+      ...prev,
+      tags: prev.tags.includes(tag)
+        ? prev.tags.filter(t => t !== tag)
+        : [...prev.tags, tag]
+    }));
+  };
+
+  // 新增自定義標籤
+  const addCustomTag = () => {
+    const tag = customTagInput.trim();
+    if (tag && !newBooking.tags.includes(tag)) {
+      setNewBooking(prev => ({
+        ...prev,
+        tags: [...prev.tags, tag]
+      }));
+      setCustomTagInput("");
+    }
+  };
+
+  // 解析時間字符串為分鐘數
+  const parseTimeToMinutes = (timeStr: string | null): number => {
+    if (!timeStr) return 0;
+    const [hours, minutes] = timeStr.split(':').map(Number);
+    return hours * 60 + minutes;
+  };
+
+  // 將分鐘數轉換為時間字符串
+  const minutesToTimeString = (minutes: number): string => {
+    const hours = Math.floor(minutes / 60) % 24;
+    const mins = minutes % 60;
+    return `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}`;
+  };
+
+  // 檢查時間衝突
+  const checkTimeConflict = (date: string, time: string, duration: number) => {
+    if (!date || !time) {
+      setTimeWarning({ type: 'none' });
+      setSuggestedEndTime("");
+      return;
+    }
+
+    const startTimeMinutes = parseTimeToMinutes(time);
+    const endTimeMinutes = startTimeMinutes + duration;
+    const endTime = minutesToTimeString(endTimeMinutes);
+    setSuggestedEndTime(endTime);
+
+    // 獲取同一天的所有已確認預約
+    const sameDayBookings = bookingsList.filter(b => 
+      b.date === date && 
+      b.status === "confirmed" &&
+      b.time
+    );
+
+    let hasOverlap = false;
+    let hasShortGap = false;
+    let conflictMessage = '';
+
+    for (const existingBooking of sameDayBookings) {
+      if (!existingBooking.duration) continue;
+      
+      const existingStartMinutes = parseTimeToMinutes(existingBooking.time);
+      const existingEndMinutes = existingStartMinutes + existingBooking.duration;
+
+      // 檢查新預約是否與現有預約重疊
+      if (startTimeMinutes < existingEndMinutes && endTimeMinutes > existingStartMinutes) {
+        hasOverlap = true;
+        conflictMessage = `⚠️ 時間重疊：與「${existingBooking.customer_name}」的預約 (${existingBooking.time}) 重疊`;
+        break;
+      }
+
+      // 檢查間隔是否少於10分鐘
+      const gapBefore = startTimeMinutes - existingEndMinutes;
+      const gapAfter = existingStartMinutes - endTimeMinutes;
+
+      if (gapBefore >= 0 && gapBefore < 10 * 60) {
+        hasShortGap = true;
+        const gapMinutes = Math.round(gapBefore / 60);
+        conflictMessage = `⚠️ 間隔較短：與「${existingBooking.customer_name}」間隔 ${gapMinutes} 分鐘（建議至少 10 分鐘）`;
+      }
+
+      if (gapAfter >= 0 && gapAfter < 10 * 60) {
+        hasShortGap = true;
+        const gapMinutes = Math.round(gapAfter / 60);
+        conflictMessage = `⚠️ 間隔較短：與「${existingBooking.customer_name}」間隔 ${gapMinutes} 分鐘（建議至少 10 分鐘）`;
+      }
+    }
+
+    if (hasOverlap) {
+      setTimeWarning({ type: 'overlap', message: conflictMessage });
+    } else if (hasShortGap) {
+      setTimeWarning({ type: 'short', message: conflictMessage });
+    } else {
+      setTimeWarning({ type: 'none' });
+    }
+  };
+
+  // 監聽服務變化，自動計算預設時長
+  useEffect(() => {
+    if (newBooking.service && newBooking.time) {
+      const duration = serviceDurationMap[newBooking.service] || 60;
+      checkTimeConflict(newBooking.date, newBooking.time, duration);
+    }
+  }, [newBooking.service, newBooking.time, newBooking.date, bookingsList]);
+
+  // 監聽時間變化，檢查衝突
+  useEffect(() => {
+    if (newBooking.date && newBooking.time && newBooking.service) {
+      const duration = serviceDurationMap[newBooking.service] || 60;
+      checkTimeConflict(newBooking.date, newBooking.time, duration);
+    }
+  }, [newBooking.date, newBooking.time, newBooking.service, bookingsList]);
+
+  // 重置表單
+  const resetNewBookingForm = () => {
+    setNewBooking({
+      name: "",
+      phone: "",
+      email: "",
+      service: "",
+      date: "",
+      time: "",
+      tags: [],
+      source: "manual"
+    });
+    setCustomTagInput("");
+    setTimeWarning({ type: 'none' });
+    setSuggestedEndTime("");
+  };
+
+  // 處理新增預約提交
+  const handleNewBookingSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    const newErrorFields = new Set<string>();
+    const missingFieldNames: string[] = [];
+    
+    if (!newBooking.name) {
+      newErrorFields.add("name");
+      missingFieldNames.push("客戶姓名");
+    }
+    if (!newBooking.phone) {
+      newErrorFields.add("phone");
+      missingFieldNames.push("聯絡電話");
+    }
+    if (!newBooking.service) {
+      newErrorFields.add("service");
+      missingFieldNames.push("預約項目");
+    }
+    if (!newBooking.date) {
+      newErrorFields.add("date");
+      missingFieldNames.push("日期");
+    }
+    if (!newBooking.time) {
+      newErrorFields.add("time");
+      missingFieldNames.push("時間");
+    }
+    
+    if (newErrorFields.size > 0) {
+      setErrorFields(newErrorFields);
+      setErrorMessage({
+        title: "哎呀，資訊還沒填完整呢！",
+        description: `請幫我填寫${missingFieldNames.join("、")}，這樣我才能幫您新增預約喔～`
+      });
+      setShowErrorDialog(true);
+      
+      // 2秒後清除錯誤欄位狀態
+      setTimeout(() => {
+        setErrorFields(new Set());
+      }, 2000);
+      
+      return;
+    }
+
+    // 檢查黑名單
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user) {
+        const normalizedPhone = newBooking.phone.replace(/[^\d]/g, '');
+        const { data: customer } = await supabase
+          .from('customers')
+          .select('is_blacklisted, no_show_count, customer_name')
+          .eq('user_id', user.id)
+          .eq('phone', normalizedPhone)
+          .maybeSingle();
+
+        if (customer && customer.is_blacklisted) {
+          setErrorMessage({
+            title: "⚠️ 此客戶在黑名單中",
+            description: `${customer.customer_name}（${newBooking.phone}）已被加入黑名單，爽約次數：${customer.no_show_count} 次。如需預約，請先在會員管理中移除黑名單。`
+          });
+          setShowErrorDialog(true);
+          return;
+        }
+      }
+    } catch (error) {
+      console.error('檢查黑名單失敗:', error);
+    }
+    
+    const duration = serviceDurationMap[newBooking.service] || 60;
+    
+    const result = await createBooking({
+      customerName: newBooking.name,
+      phone: newBooking.phone,
+      email: newBooking.email,
+      service: newBooking.service,
+      date: newBooking.date,
+      time: newBooking.time,
+      duration: duration,
+      tags: newBooking.tags
+    });
+    
+    if (result.success) {
+      toast({
+        title: "預約新增成功",
+        description: "新預約已成功創建"
+      });
+      // 重新載入數據
+      let data;
+      if (filter === "history") {
+        data = await fetchHistoryBookings();
+      } else {
+        data = await fetchBookingsByStatus(filter);
+      }
+      setBookingsList(data);
+      // 更新待處理數量
+      const pendingData = await fetchBookingsByStatus('pending');
+      setPendingCount(pendingData.length);
+      setShowNewBookingModal(false);
+      resetNewBookingForm();
+    } else {
+      toast({
+        title: "新增失敗",
+        description: "無法創建預約，請稍後再試"
+      });
+    }
+  };
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-3xl font-bold tracking-tight text-gray-900">預約管理</h2>
-          <p className="text-gray-700 mt-2">管理所有客戶預約與確認狀態。</p>
+    <>
+      <style>{customScrollbarStyles}</style>
+      <div className="min-h-screen bg-white">
+      {/* 頂部作戰列 */}
+      <div className="px-8 py-8 border-b border-[#F4F4F5]">
+        <div className="max-w-[1400px] mx-auto flex items-center justify-between">
+          <div>
+            <h1 className="text-3xl font-bold text-[#1A1A1A] tracking-tight">預約管理</h1>
+            <p className="text-[#9CA3AF] mt-1 text-base">高效處理所有客戶預約與確認狀態</p>
+          </div>
+          <button 
+            onClick={() => {
+              resetNewBookingForm();
+              setShowNewBookingModal(true);
+            }}
+            className="flex items-center gap-2 px-6 py-3 bg-[#1A1A1A] text-white rounded-xl hover:bg-black transition-colors h-12"
+          >
+            <Plus className="w-5 h-5" />
+            <span className="text-base font-medium">手動新增預約</span>
+          </button>
         </div>
-        <button className="flex items-center px-4 py-2 bg-black text-white rounded-lg hover:bg-gray-800 transition-colors">
-          <Plus className="w-4 h-4 mr-2" />
-          手動新增預約
-        </button>
       </div>
 
-      <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
-        <div className="flex items-center justify-between mb-6">
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setFilter("all")}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                filter === "all" ? "bg-black text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-              }`}
-            >
-              全部
-            </button>
+      {/* 狀態過濾區 */}
+      <div className="px-8 py-6">
+        <div className="max-w-[1400px] mx-auto flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
             <button
               onClick={() => setFilter("pending")}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                filter === "pending" ? "bg-black text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              className={`relative px-5 py-2.5 rounded-lg text-sm font-medium transition-all h-10 ${
+                filter === "pending"
+                  ? "bg-[#1A1A1A] text-white"
+                  : "bg-[#F4F4F5] text-[#1A1A1A] hover:bg-[#E5E5E6]"
               }`}
             >
-              待確認
+              待處理
+              {pendingCount > 0 && (
+                <span className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-[#EF4444] text-white text-xs rounded-full flex items-center justify-center font-bold">
+                  {pendingCount}
+                </span>
+              )}
             </button>
             <button
               onClick={() => setFilter("confirmed")}
-              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                filter === "confirmed" ? "bg-black text-white" : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+              className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all h-10 ${
+                filter === "confirmed"
+                  ? "bg-[#1A1A1A] text-white"
+                  : "bg-[#F4F4F5] text-[#1A1A1A] hover:bg-[#E5E5E6]"
               }`}
             >
               已確認
             </button>
+            <button
+              onClick={() => setFilter("history")}
+              className={`px-5 py-2.5 rounded-lg text-sm font-medium transition-all h-10 ${
+                filter === "history"
+                  ? "bg-[#1A1A1A] text-white"
+                  : "bg-[#F4F4F5] text-[#1A1A1A] hover:bg-[#E5E5E6]"
+              }`}
+            >
+              歷史紀錄
+            </button>
           </div>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+          <div className="flex items-center gap-2 bg-[#F4F4F5] rounded-lg px-4 py-2.5 w-96">
+            <Search className="w-4 h-4 text-gray-400" />
             <input
               type="text"
-              placeholder="搜尋客戶..."
-              className="pl-10 pr-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-black focus:border-transparent outline-none"
+              placeholder="搜尋客戶姓名或手機號碼"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="bg-transparent border-0 outline-none text-sm w-full placeholder-gray-400"
             />
           </div>
         </div>
+      </div>
 
-        <div className="space-y-4">
-          {filteredBookings.map((booking) => (
-            <div key={booking.id} className="p-4 border border-gray-100 rounded-lg hover:border-black/50 transition-colors">
-              <div className="flex items-start justify-between">
-                <div className="flex items-start gap-4">
-                  <div className="p-3 bg-black/5 rounded-lg">
-                    <Clock className="w-5 h-5 text-black" />
+      {/* 主內容區 - 卡片化清單 */}
+      <div className="px-8 pb-8">
+        <div className="max-w-[1400px] mx-auto space-y-4">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-16">
+              <div className="flex flex-col items-center gap-3">
+                <div className="w-8 h-8 border-4 border-gray-200 border-t-black rounded-full animate-spin" />
+                <p className="text-sm text-gray-500">載入中...</p>
+              </div>
+            </div>
+          ) : sortedBookings.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center">
+              <div className="w-24 h-24 bg-[#F4F4F5] rounded-full flex items-center justify-center mb-4">
+                <Clock className="w-12 h-12 text-[#1A1A1A]" />
+              </div>
+              <h3 className="text-xl font-semibold text-[#1A1A1A] mb-2">沒有找到預約</h3>
+              <p className="text-slate-400 text-sm">
+                {searchTerm ? "請試試其他關鍵字" : "目前沒有預約"}
+              </p>
+            </div>
+          ) : (
+            sortedBookings.map((booking) => (
+            <div
+              key={booking.id}
+              data-booking-id={booking.id}
+              className={`p-5 bg-white border rounded-xl shadow-sm hover:shadow-md transition-all ${
+                highlightedBookingId === booking.id
+                  ? "highlight-flash"
+                  : ""
+              } ${
+                booking.source === 'AI_Chatbot'
+                  ? "border-2 border-red-200"
+                  : isInProgressBooking(booking)
+                  ? "border-2 border-green-500 bg-green-50 ring-2 ring-green-200"
+                  : isUrgentBooking(booking)
+                  ? "border-2 border-red-500 bg-red-50"
+                  : booking.status === "pending"
+                  ? "border-l-4 border-l-[#EF4444] border-slate-100 rounded-r-xl"
+                  : booking.hasConflict
+                  ? "border-2 border-red-200 bg-red-50/30"
+                  : "border-slate-100"
+              }`}
+            >
+              <div className="flex items-center justify-between">
+                {/* 左側區域 */}
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-[#F4F4F5] rounded-full flex items-center justify-center">
+                    {booking.source === 'AI_Chatbot' ? (
+                      <Bot className="w-5 h-5 text-[#1A1A1A]" />
+                    ) : (
+                      <Phone className="w-5 h-5 text-[#1A1A1A]" />
+                    )}
                   </div>
                   <div>
-                    <h4 className="font-bold text-gray-900">{booking.name}</h4>
-                    <p className="text-sm text-gray-600 mt-1">{booking.service}</p>
-                    <div className="flex items-center gap-4 mt-2 text-sm text-gray-500">
-                      <span>{booking.date}</span>
-                      <span>{booking.time}</span>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-lg font-bold text-[#1A1A1A]">{booking.customer_name}</h3>
+                      {isInProgressBooking(booking) && (
+                        <span className="text-xs bg-green-500 text-white px-2 py-0.5 rounded-full font-medium animate-pulse">正在進行中</span>
+                      )}
+                      {booking.source === 'AI_Chatbot' && (
+                        <span className="text-xs text-red-500 font-medium">AI 自動預約</span>
+                      )}
                     </div>
+                    {booking.tags && booking.tags.length > 0 && (
+                      <div className="flex items-center gap-1 mt-1">
+                        {booking.tags.map((tag, index) => (
+                          <span key={index} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
+                            {tag}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <p className="text-slate-400 mt-0.5 text-sm">{booking.phone}</p>
+                    {booking.ai_notes && (
+                      <p className="text-purple-600 mt-1 text-xs flex items-center gap-1">
+                        <MessageCircle className="w-3 h-3" />
+                        {booking.ai_notes}
+                      </p>
+                    )}
                   </div>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className={`px-3 py-1 rounded-full text-xs font-medium ${
-                    booking.status === "confirmed" 
-                      ? "bg-green-100 text-green-800" 
-                      : "bg-yellow-100 text-yellow-800"
-                  }`}>
-                    {booking.status === "confirmed" ? "已確認" : "待確認"}
-                  </span>
-                  {booking.status === "pending" && (
-                    <div className="flex items-center gap-1 ml-2">
-                      <button className="p-2 bg-green-100 text-green-600 rounded-lg hover:bg-green-200 transition-colors">
+
+                {/* 中間區域 */}
+                <div className="flex-1 px-8">
+                  <div className="flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-[#1A1A1A]" />
+                    <p className="text-base font-semibold text-[#1A1A1A]">{booking.service}</p>
+                  </div>
+                  <p className="text-slate-400 mt-0.5 text-sm">
+                    {booking.date} {booking.time}
+                    {booking.duration && ` - ${minutesToTimeString(parseTimeToMinutes(booking.time) + booking.duration)}`}
+                  </p>
+                  {booking.hasConflict && (
+                    <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
+                      <X className="w-3 h-3" />
+                      時段衝突警告
+                    </p>
+                  )}
+                </div>
+
+                {/* 右側動作區 */}
+                <div className="flex items-center gap-3">
+                  {booking.status === "pending" ? (
+                    <>
+                      <button 
+                        onClick={() => handleConfirm(String(booking.id))}
+                        className="w-10 h-10 bg-[#1A1A1A] text-white rounded-full hover:bg-black transition-all flex items-center justify-center"
+                      >
                         <Check className="w-4 h-4" />
                       </button>
-                      <button className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors">
+                      <button 
+                        onClick={() => handleReject(String(booking.id))}
+                        className="w-10 h-10 border-2 border-[#EF4444] text-[#EF4444] rounded-full hover:bg-[#EF4444] hover:text-white transition-all flex items-center justify-center"
+                      >
                         <X className="w-4 h-4" />
                       </button>
+                    </>
+                  ) : booking.status === "confirmed" ? (
+                    <div className="flex items-center gap-1 text-green-600">
+                      <Check className="w-4 h-4" />
+                      <span className="text-xs font-medium">已確認</span>
+                    </div>
+                  ) : booking.status === "completed" ? (
+                    <div className="flex items-center gap-1 text-green-600">
+                      <Check className="w-4 h-4" />
+                      <span className="text-xs font-medium">已完成</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1 text-slate-400">
+                      <X className="w-4 h-4" />
+                      <span className="text-xs font-medium">已取消</span>
                     </div>
                   )}
                 </div>
               </div>
+              
+              {/* 備註區域 */}
+              {booking.note && (
+                <div className="mt-3 pt-3 border-t border-slate-100">
+                  <p className="text-sm text-slate-500">備註：{booking.note}</p>
+                </div>
+              )}
             </div>
-          ))}
+          )))}
         </div>
       </div>
-    </div>
+
+      {/* 手動新增預約彈窗 */}
+      {showNewBookingModal && (
+        <div 
+          className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center"
+          onClick={() => setShowNewBookingModal(false)}
+        >
+          <div 
+            className="bg-white h-auto max-h-[90vh] w-[95%] max-w-[550px] rounded-3xl shadow-2xl my-8 p-8 flex flex-col border-0 backdrop-blur-sm"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* 標題區 */}
+            <div className="flex items-center gap-3 mb-6">
+              <div className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center">
+                <Plus className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h2 className="text-2xl font-bold text-gray-900">新增預約</h2>
+                <p className="text-slate-400 text-sm mt-0.5">直接確認並同步至排程</p>
+              </div>
+            </div>
+
+            {/* 可滾動內容區 */}
+            <div className="flex-1 overflow-y-auto my-4 px-1 custom-scrollbar">
+              <form onSubmit={handleNewBookingSubmit} className="space-y-5 py-2">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">客戶姓名 <span className="text-red-600 font-bold">*</span></label>
+                  <input 
+                    type="text" 
+                    value={newBooking.name}
+                    onChange={(e) => setNewBooking(prev => ({ ...prev, name: e.target.value }))}
+                    placeholder="請輸入姓名"
+                    className={`w-full h-12 px-4 bg-gray-50 border-0 rounded-xl text-base focus:ring-2 focus:ring-black outline-none ${errorFields.has("name") ? "error-flash" : ""}`}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">聯絡電話 <span className="text-red-600 font-bold">*</span></label>
+                  <input 
+                    type="tel" 
+                    value={newBooking.phone}
+                    onChange={(e) => {
+                      // 只允許輸入數字
+                      const value = e.target.value.replace(/[^\d]/g, '');
+                      setNewBooking(prev => ({ ...prev, phone: value }));
+                    }}
+                    placeholder="請輸入電話號碼"
+                    className={`w-full h-12 px-4 bg-gray-50 border-0 rounded-xl text-base focus:ring-2 focus:ring-black outline-none ${errorFields.has("phone") ? "error-flash" : ""}`}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">電子信箱（選填）</label>
+                  <input 
+                    type="email" 
+                    value={newBooking.email}
+                    onChange={(e) => setNewBooking(prev => ({ ...prev, email: e.target.value }))}
+                    placeholder="請輸入電子信箱"
+                    className="w-full h-12 px-4 bg-gray-50 border-0 rounded-xl text-base focus:ring-2 focus:ring-black outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">預約項目 <span className="text-red-600 font-bold">*</span></label>
+                  <select
+                    value={newBooking.service}
+                    onChange={(e) => setNewBooking(prev => ({ ...prev, service: e.target.value }))}
+                    className={`w-full h-12 px-4 bg-gray-50 border-0 rounded-xl text-base focus:ring-2 focus:ring-black outline-none ${errorFields.has("service") ? "error-flash" : ""}`}
+                    required
+                  >
+                    <option value="">請選擇項目</option>
+                    {mockServices.map((service) => (
+                      <option key={service.id} value={service.name}>
+                        {service.name} ({service.duration}分鐘) - NT${service.price}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">日期 <span className="text-red-600 font-bold">*</span></label>
+                  <input 
+                    type="date" 
+                    value={newBooking.date}
+                    onChange={(e) => setNewBooking(prev => ({ ...prev, date: e.target.value }))}
+                    className={`w-full h-12 px-4 bg-gray-50 border-0 rounded-xl text-base focus:ring-2 focus:ring-black outline-none ${errorFields.has("date") ? "error-flash" : ""}`}
+                    required
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">時間 <span className="text-red-600 font-bold">*</span></label>
+                  <div className={errorFields.has("time") ? "error-flash" : ""}>
+                    <TimePicker 
+                      value={newBooking.time}
+                      onChange={(value) => setNewBooking(prev => ({ ...prev, time: value }))}
+                    />
+                  </div>
+                </div>
+
+                {/* 建議結束時間顯示 */}
+                {suggestedEndTime && (
+                  <div className="flex items-center gap-2 text-sm text-slate-500 bg-gray-50 px-4 py-2.5 rounded-xl">
+                    <Clock className="w-4 h-4" />
+                    <span>建議結束時間：{suggestedEndTime}</span>
+                  </div>
+                )}
+
+                {/* 衝突警告 */}
+                {timeWarning.type !== 'none' && (
+                  <div className={`flex items-start gap-3 p-4 rounded-xl ${
+                    timeWarning.type === 'overlap' ? 'bg-red-50 border border-red-200' : 'bg-amber-50 border border-amber-200'
+                  }`}>
+                    <AlertCircle className={`w-5 h-5 mt-0.5 ${
+                      timeWarning.type === 'overlap' ? 'text-red-500' : 'text-amber-500'
+                    }`} />
+                    <p className={`text-sm ${
+                      timeWarning.type === 'overlap' ? 'text-red-700' : 'text-amber-700'
+                    }`}>
+                      {timeWarning.message}
+                    </p>
+                  </div>
+                )}
+
+                {/* 標籤式備註 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">顧客標籤（選填）</label>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    {[...commonTags, ...newBooking.tags.filter(t => !commonTags.includes(t))].map((tag) => (
+                      <button
+                        key={tag}
+                        type="button"
+                        onClick={() => toggleTag(tag)}
+                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                          newBooking.tags.includes(tag)
+                            ? 'bg-[#1A1A1A] text-white'
+                            : 'bg-[#F4F4F5] text-[#1A1A1A] hover:bg-[#E5E5E6]'
+                        }`}
+                      >
+                        {tag}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={customTagInput}
+                      onChange={(e) => setCustomTagInput(e.target.value)}
+                      placeholder="新增自定義標籤"
+                      className="flex-1 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-black focus:border-transparent outline-none transition-all"
+                      onKeyDown={(e) => e.key === 'Enter' && (e.preventDefault(), addCustomTag())}
+                    />
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        addCustomTag();
+                      }}
+                      className="px-4 py-2 bg-[#1A1A1A] text-white rounded-lg text-sm font-medium hover:bg-black transition-colors"
+                    >
+                      +
+                    </button>
+                  </div>
+                </div>
+              </form>
+            </div>
+
+            {/* 底部按鈕區 */}
+            <div className="flex gap-3 pt-4">
+              <button 
+                type="button"
+                onClick={() => setShowNewBookingModal(false)}
+                className="flex-1 h-12 bg-gray-100 text-gray-900 rounded-xl hover:bg-gray-200 transition-colors font-medium"
+              >
+                取消
+              </button>
+              <button 
+                type="button"
+                onClick={handleNewBookingSubmit}
+                className={`flex-1 h-12 rounded-xl transition-colors font-medium ${
+                  timeWarning.type === 'overlap'
+                    ? 'bg-[#EF4444] text-white hover:bg-red-600'
+                    : 'bg-black text-white hover:bg-gray-800'
+                }`}
+              >
+                {timeWarning.type === 'overlap' ? '強制新增' : '確認新增'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 錯誤警告彈窗 */}
+      {showErrorDialog && (
+        <div 
+          className="fixed inset-0 bg-black/30 backdrop-blur-sm z-50 flex items-center justify-center"
+          onClick={() => setShowErrorDialog(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl p-6 max-w-sm w-full mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-3 mb-4">
+              <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+                <AlertCircle className="w-5 h-5 text-red-600" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900">{errorMessage.title}</h3>
+            </div>
+            <p className="text-sm text-gray-600 mb-6">{errorMessage.description}</p>
+            <button
+              onClick={() => setShowErrorDialog(false)}
+              className="w-full h-10 bg-black text-white rounded-xl hover:bg-gray-800 transition-colors font-medium"
+            >
+              我知道了
+            </button>
+          </div>
+        </div>
+      )}
+      </div>
+    </>
   );
 }

@@ -1,8 +1,16 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useMemo, useTransition } from "react";
-import { createClient } from "@/lib/supabase";
+import { supabase, getTimeFromStart, autoUpdateExpiredBookings } from "@/lib/bookingService";
 import { useToast } from "@/hooks/use-toast";
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
+
+// 擴展 dayjs 插件
+dayjs.extend(utc);
+dayjs.extend(timezone);
+dayjs.tz.setDefault('Asia/Taipei');
 
 const errorFlashAnimation = `
   @keyframes error-flash {
@@ -79,7 +87,7 @@ const errorFlashAnimation = `
     scrollbar-color: #e5e7eb transparent;
   }
 `;
-import { ChevronDown, MapPin, Phone, Mail, Clock, Tag, X, User, Crown, Scissors, Eye, Palette, Calendar, Plus, AlertCircle, CalendarPlus, Check, PhoneCall, Mail as MailIcon, CreditCard, FileText, Edit, UserX, PlusCircle } from "lucide-react";
+import { ChevronDown, MapPin, Phone as PhoneIcon, Mail as MailIcon, Clock, Tag, X, User, Crown, Scissors, Eye, Palette, Calendar, Plus, AlertCircle, CalendarPlus, Check, PhoneCall, CreditCard, FileText, Edit, UserX, PlusCircle } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetTrigger } from "@/components/ui/sheet";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -109,13 +117,56 @@ interface Appointment {
   }[];
   isActive?: boolean;
   isFinished?: boolean;
+  start_time?: string; // UTC 時間字串
+  end_time?: string; // UTC 時間字串
+  calculatedDuration?: number; // 自動計算的時長（分鐘）
 }
 
 // 電話號碼標準化函數（處理 0912-345-678 vs 0912345678）
 const normalizePhoneNumber = (phone: string): string => {
   if (!phone) return '';
+  
   // 移除所有非數字字符
-  return phone.replace(/[^\d]/g, '');
+  const cleanPhone = phone.replace(/[^\d]/g, '');
+  
+  // 台灣手機號碼格式驗證
+  if (cleanPhone.length === 10 && cleanPhone.startsWith('09')) {
+    return cleanPhone; // 標準 10 位手機號碼
+  }
+  
+  // 國碼格式處理
+  if (cleanPhone.length === 12 && cleanPhone.startsWith('8869')) {
+    return '0' + cleanPhone.substring(3); // 886912345678 -> 0912345678
+  }
+  
+  // 其他格式，直接返回清理後的號碼
+  return cleanPhone;
+};
+
+// 電話號碼格式驗證函數
+const validatePhoneNumber = (phone: string): { isValid: boolean; message: string } => {
+  if (!phone) {
+    return { isValid: false, message: '電話號碼為必填項目' };
+  }
+  
+  const cleanPhone = phone.replace(/[^\d]/g, '');
+  
+  // 台灣手機號碼驗證
+  if (cleanPhone.length === 10 && cleanPhone.startsWith('09')) {
+    return { isValid: true, message: '' };
+  }
+  
+  // 國碼格式驗證
+  if (cleanPhone.length === 12 && cleanPhone.startsWith('8869')) {
+    return { isValid: true, message: '' };
+  }
+  
+  // 9 位號碼（可能是舊格式）
+  if (cleanPhone.length === 9 && cleanPhone.startsWith('9')) {
+    return { isValid: true, message: '建議使用 10 位號碼格式 (09xxxxxxxx)' };
+  }
+  
+  return { isValid: false, message: '請輸入有效的台灣手機號碼 (09xxxxxxxx 或 +886-9-xxxxxxxx)' };
 };
 
 // CRM 輔助函數：根據電話號碼查找或創建顧客
@@ -136,28 +187,13 @@ const getOrCreateCustomer = async (supabase: any, phone: string, customerName: s
       .maybeSingle();
 
     if (existingCustomer) {
-      // 顧客已存在，合併標籤
-      const mergedTags = Array.from(new Set([...(existingCustomer.tags || []), ...tags]));
-      
-      // 更新顧客資料
-      const { data: updatedCustomer } = await supabase
-        .from('customers')
-        .update({
-          customer_name: customerName || existingCustomer.customer_name,
-          email: email || existingCustomer.email,
-          tags: mergedTags,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', existingCustomer.id)
-        .select()
-        .single();
-
-      return updatedCustomer;
+      // 顧客已存在，直接返回現有資料（保留 is_blacklisted 等欄位）
+      return existingCustomer;
     } else {
-      // 顧客不存在，創建新顧客
+      // 顧客不存在，創建新顧客（使用 upsert 避免競爭條件）
       const { data: newCustomer } = await supabase
         .from('customers')
-        .insert({
+        .upsert({
           user_id: user.id,
           phone: normalizedPhone,
           email: email || null,
@@ -167,6 +203,9 @@ const getOrCreateCustomer = async (supabase: any, phone: string, customerName: s
           no_show_count: 0,
           is_blacklisted: false,
           total_spending: 0
+        }, {
+          onConflict: 'user_id,phone',
+          ignoreDuplicates: false
         })
         .select()
         .single();
@@ -249,32 +288,69 @@ const fetchBookingsFromSupabase = async (supabase: any, toast: any) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return [];
 
+    console.log('[Calendar] 當前登入 user_id:', user.id);
+
+    // 查詢條件：只獲取未刪除的預約
     const { data, error } = await supabase
       .from('bookings')
       .select('*')
       .eq('user_id', user.id)
-      .neq('status', 'no_show') // 排除 status='no_show' 的預約
-      .order('date', { ascending: true })
-      .order('time', { ascending: true });
+      .eq('is_deleted', false);
+
+    console.log('[Calendar] 查詢錯誤:', error);
+    console.log('[Calendar] 從 Supabase 抓取到的預約數量:', data?.length || 0);
 
     if (error) throw error;
 
-    return (data || []).map((booking: any) => ({
-      id: booking.id,
-      category: booking.category || 'booking',
-      customerName: booking.customer_name,
-      service: booking.service,
-      serviceType: booking.service_type,
-      serviceAbbr: booking.service_abbr || '指甲',
-      date: booking.date,
-      time: booking.time,
-      remainingTime: booking.duration,
-      phone: booking.phone,
-      email: booking.email,
-      tags: booking.tags || [],
-      aiNotes: booking.ai_notes || '',
-      history: []
-    }));
+    // 修正資料格式：確保 tags 永遠是陣列，正確映射欄位
+    const cleanedData = (data || []).map((booking: any) => {
+      // 舊資料相容：如果沒有 start_time 但有 date 和 time，則合成 start_time
+      let startTime = booking.start_time;
+      let endTime = booking.end_time;
+      let calculatedDuration = booking.duration || 0;
+
+      if (!startTime && booking.date && booking.time) {
+        const startDateTime = new Date(`${booking.date}T${booking.time}`);
+        // 直接轉換為 ISO 字符串，瀏覽器會自動處理時區轉換
+        startTime = startDateTime.toISOString();
+
+        if (calculatedDuration > 0) {
+          const endDateTime = new Date(startDateTime.getTime() + calculatedDuration * 60000);
+          endTime = endDateTime.toISOString();
+        }
+      }
+
+      // 計算時長（分鐘）- 使用 UTC 時間戳計算，避免時區影響
+      if (startTime && endTime) {
+        try {
+          const start = new Date(startTime);
+          const end = new Date(endTime);
+          // 直接使用 UTC 時間戳計算時長，不受時區影響
+          calculatedDuration = Math.round((end.getTime() - start.getTime()) / (1000 * 60));
+          // 確保時長為正數
+          if (calculatedDuration < 0) {
+            calculatedDuration = booking.duration || 0;
+          }
+        } catch (e) {
+          calculatedDuration = booking.duration || 0;
+        }
+      }
+
+      return {
+        ...booking,
+        start_time: startTime, // 使用合成或原本的 start_time
+        end_time: endTime, // 使用合成或原本的 end_time
+        customerName: booking.customer_name || '未知顧客', // 映射資料庫欄位到前端欄位
+        calculatedDuration, // 自動計算的時長（分鐘）
+        tags: booking.tags || [], // 防止 null 導致 .length 報錯
+        aiNotes: booking.notes || booking.ai_notes || '', // 優先使用 notes 欄位
+        service: booking.service_item || booking.service || booking.category || '未指定服務', // 優先使用 service_item，fallback 到 category
+        phone: booking.phone || '',
+        email: booking.email || ''
+      };
+    });
+
+    return cleanedData;
   } catch (error: any) {
     toast({
       title: "載入預約失敗",
@@ -286,41 +362,120 @@ const fetchBookingsFromSupabase = async (supabase: any, toast: any) => {
 
 const saveBookingToSupabase = async (supabase: any, appointment: Appointment) => {
   try {
+    // 使用統一的 saveBooking 函數，確保 source 和時間欄位正確
+    const { saveBooking } = await import('@/lib/bookingService');
+
+    // 強制型別轉換：確保 duration 為有效數字
+    const duration = appointment.remainingTime ? parseInt(String(appointment.remainingTime).replace(/\D/g, ''), 10) || 60 : 60;
+    const isActivity = appointment.category === 'activity';
+
+    // 驗證必要欄位
+    if (!duration || duration <= 0) {
+      throw new Error('服務時長設定無效，請重新選擇');
+    }
+
+    if (!isActivity && (!appointment.customerName || !appointment.phone)) {
+      throw new Error('顧客姓名和電話為必填項目');
+    }
+
+    const result = await saveBooking({
+      customerName: isActivity ? undefined : appointment.customerName,
+      phone: isActivity ? undefined : (appointment.phone || ''),
+      email: isActivity ? undefined : (appointment.email || ''),
+      service: appointment.service,
+      date: appointment.date,
+      time: getTimeFromStart(appointment.start_time) || '00:00',
+      duration: duration,
+      tags: isActivity ? undefined : (appointment.tags || []),
+      source: 'manual', // 明確設為 manual
+      ai_notes: appointment.aiNotes || '',
+      note: '',
+      category: appointment.category || 'booking'
+    });
+
+    if (!result.success) {
+      const errorMsg = result.error?.message || '儲存預約失敗';
+      throw new Error(errorMsg);
+    }
+
+    return true;
+  } catch (error: any) {
+    // 全域 API 錯誤捕捉與處理
+    const errorMessage = error?.message || '儲存預約時發生未知錯誤';
+    
+    // 根據錯誤類型提供具體提示
+    if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
+      throw new Error('網路連線異常，請檢查網路狀態後重試');
+    } else if (errorMessage.includes('constraint') || errorMessage.includes('duplicate')) {
+      throw new Error('預約時間衝突，請選擇其他時間');
+    } else if (errorMessage.includes('permission') || errorMessage.includes('unauthorized')) {
+      throw new Error('權限不足，請重新登入後重試');
+    }
+    
+    console.error('詳細錯誤內容:', error);
+    console.error('錯誤訊息:', errorMessage);
+    throw error; // 重新拋出讓上層處理
+  }
+};
+
+const updateBookingToSupabase = async (supabase: any, appointment: Appointment) => {
+  try {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) {
-      return;
+      throw new Error('用戶未登入，無法更新預約');
+    }
+
+    // 強制型別轉換：確保 duration 為有效數字
+    const duration = appointment.remainingTime ? parseInt(String(appointment.remainingTime).replace(/\D/g, ''), 10) : 60;
+    
+    if (!duration || duration <= 0) {
+      throw new Error('服務時長設定無效，請重新選擇');
     }
 
     const bookingData = {
-      id: appointment.id,
-      user_id: user.id,
       category: appointment.category || 'booking',
       customer_name: appointment.customerName,
       service: appointment.service,
       service_type: appointment.serviceType,
       service_abbr: appointment.serviceAbbr,
       date: appointment.date,
-      time: appointment.time,
-      duration: appointment.remainingTime,
+      time: getTimeFromStart(appointment.start_time) || '00:00',
+      duration: duration,
       phone: appointment.phone,
       email: appointment.email,
       tags: appointment.tags,
       ai_notes: appointment.aiNotes,
-      status: 'completed'
     };
 
     const { error } = await supabase
       .from('bookings')
-      .upsert(bookingData, { onConflict: 'id' });
+      .update(bookingData)
+      .eq('id', appointment.id)
+      .eq('user_id', user.id);
 
     if (error) {
-      throw error;
+      const errorMessage = error.message || '更新預約失敗';
+      
+      // 根據錯誤類型提供具體提示
+      if (errorMessage.includes('constraint') || errorMessage.includes('duplicate')) {
+        throw new Error('預約時間衝突，請選擇其他時間');
+      } else if (errorMessage.includes('permission') || errorMessage.includes('unauthorized')) {
+        throw new Error('權限不足，請重新登入後重試');
+      }
+      
+      throw new Error(errorMessage);
     }
 
     return true;
   } catch (error: any) {
-    console.error('Error saving booking:', error);
-    return false;
+    const errorMessage = error?.message || '更新預約時發生未知錯誤';
+    
+    if (errorMessage.includes('network') || errorMessage.includes('fetch')) {
+      throw new Error('網路連線異常，請檢查網路狀態後重試');
+    }
+    
+    console.error('Error updating booking:', error);
+    throw error; // 重新拋出讓上層處理
   }
 };
 
@@ -328,7 +483,10 @@ const deleteBookingFromSupabase = async (supabase: any, appointmentId: string) =
   try {
     const { error } = await supabase
       .from('bookings')
-      .delete()
+      .update({
+        is_deleted: true,
+        status: 'cancelled'
+      })
       .eq('id', appointmentId);
 
     if (error) {
@@ -337,6 +495,7 @@ const deleteBookingFromSupabase = async (supabase: any, appointmentId: string) =
 
     return true;
   } catch (error: any) {
+    console.error('Error deleting booking:', error);
     return false;
   }
 };
@@ -347,10 +506,11 @@ const fetchDeletedBookingsFromSupabase = async (supabase: any, toast: any) => {
     if (!user) return [];
 
     const { data, error } = await supabase
-      .from('deleted_bookings')
+      .from('bookings')
       .select('*')
       .eq('user_id', user.id)
-      .order('deleted_at', { ascending: false })
+      .eq('is_deleted', true)
+      .order('updated_at', { ascending: false })
       .limit(5);
 
     if (error) {
@@ -366,7 +526,7 @@ const fetchDeletedBookingsFromSupabase = async (supabase: any, toast: any) => {
       serviceType: booking.service_type,
       serviceAbbr: booking.service_abbr,
       date: booking.date,
-      time: booking.time,
+      time: getTimeFromStart(booking.start_time),
       remainingTime: booking.duration,
       phone: booking.phone,
       email: booking.email,
@@ -385,72 +545,54 @@ const fetchDeletedBookingsFromSupabase = async (supabase: any, toast: any) => {
   }
 };
 
-const saveDeletedBookingToSupabase = async (supabase: any, appointment: Appointment) => {
+const fetchCustomerHistoryFromSupabase = async (supabase: any, phone: string) => {
   try {
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) {
-      return false;
-    }
+    if (!user) return [];
 
-    const deletedBookingData = {
-      id: appointment.id,
-      customer_name: appointment.customerName,
-      service: appointment.service,
-      service_type: appointment.serviceType,
-      service_abbr: appointment.serviceAbbr,
-      date: appointment.date,
-      time: appointment.time,
-      duration: appointment.remainingTime,
-      phone: appointment.phone,
-      email: appointment.email,
-      tags: appointment.tags,
-      ai_notes: appointment.aiNotes,
-      is_active: appointment.isActive !== false,
-      is_finished: appointment.isFinished || false,
-      user_id: user.id,
-      booking_source: 'manual'
-    };
+    const normalizedPhone = normalizePhoneNumber(phone);
+    if (!normalizedPhone) return [];
 
-    const { error } = await supabase
-      .from('deleted_bookings')
-      .upsert(deletedBookingData, {
-        onConflict: 'id'
-      });
+    const { data, error } = await supabase
+      .from('bookings')
+      .select('*')
+      .eq('user_id', user.id)
+      .eq('phone', normalizedPhone)
+      .eq('status', 'completed')
+      .order('date', { ascending: false })
+      .order('time', { ascending: false })
+      .limit(10);
 
     if (error) {
-      return false;
+      return [];
     }
 
-    return true;
+    if (!data) return [];
+
+    return data.map((booking: any) => ({
+      service: booking.service,
+      date: booking.date,
+      time: getTimeFromStart(booking.start_time),
+      duration: booking.duration
+    }));
   } catch (error: any) {
-    return false;
-  }
-};
-
-const deleteDeletedBookingFromSupabase = async (supabase: any, appointmentId: string) => {
-  try {
-    const { error } = await supabase
-      .from('deleted_bookings')
-      .delete()
-      .eq('id', appointmentId);
-
-    if (error) {
-      return false;
-    }
-
-    return true;
-  } catch (error: any) {
-    return false;
+    console.error('Error fetching customer history:', error);
+    return [];
   }
 };
 
 export default function CalendarPage() {
-  const supabase = createClient();
   const { toast } = useToast();
   const [isPending, startTransition] = useTransition();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [currentTime, setCurrentTime] = useState(new Date());
   const [appointments, setAppointments] = useState<Appointment[]>([]);
+  const [isClient, setIsClient] = useState(false);
+
+  // 掛載檢查：防止伺服器與客戶端 DOM 不一致
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   // 新增預約彈窗的 ref（非受控組件）
   const customerNameRef = useRef<HTMLInputElement>(null);
@@ -461,14 +603,71 @@ export default function CalendarPage() {
 
   // 將 remainingTime 轉換為分鐘
   const parseRemainingTime = (timeStr: string): number => {
+    if (!timeStr) return 0;
     const match = timeStr.match(/(\d+)/);
     return match ? parseInt(match[1]) : 0;
   };
 
+  // 輔助函式：檢查訂單是否跨日
+  const isCrossDayBooking = (app: any) => {
+    if (!app.start_time || !app.end_time) return false;
+    const startDate = new Date(app.start_time).toDateString();
+    const endDate = new Date(app.end_time).toDateString();
+    return startDate !== endDate;
+  };
+
+  // 輔助函式：獲取訂單在指定日期的排序權重
+  // 跨日訂單在開始日期權重為 1（最後），在結束日期權重為 -1（最前）
+  const getSortWeight = (app: any, date: Date) => {
+    if (!isCrossDayBooking(app)) return 0;
+    
+    const dateString = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+    const startDate = new Date(app.start_time);
+    const startDateString = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`;
+    const endDate = new Date(app.end_time);
+    const endDateString = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
+    
+    if (dateString === startDateString) return 1; // 開始日期：排在最後
+    if (dateString === endDateString) return -1; // 結束日期：排在最前
+    return 0;
+  };
+
+  // 跨日訂單排序函數 - 使用 dayjs 精確處理
+  const sortAppointments = (apps: any[], viewDate: Date) => {
+    const startOfViewDay = dayjs(viewDate).startOf('day');
+
+    return [...apps].sort((a, b) => {
+      // 判定是否為「從昨天跨過來」的預約
+      const isACross = dayjs(a.start_time).isBefore(startOfViewDay);
+      const isBCross = dayjs(b.start_time).isBefore(startOfViewDay);
+
+      // 跨日預約強制置頂（時空連續性）
+      if (isACross && !isBCross) return -1; // 跨日預約優先
+      if (!isACross && isBCross) return 1;
+      
+      // 同類型的按開始時間排序（使用 dayjs unix timestamp）
+      return dayjs(a.start_time).unix() - dayjs(b.start_time).unix();
+    });
+  };
+
   // 輔助函式：獲取指定日期的預約
+  // 使用 date 欄位作為唯一真理，避免時區轉換造成的混淆
+  // 跨日訂單會顯示在開始日期和結束日期
   const getAppointmentsForDate = (date: Date) => {
     const dateString = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-    return appointments.filter((app) => app.date === dateString);
+    return appointments.filter((app) => {
+      // 直接使用 date 欄位進行比對，這是店長看到的日期
+      if (app.date === dateString) return true;
+      
+      // 檢查是否為跨日訂單，如果是則檢查結束日期
+      if (isCrossDayBooking(app)) {
+        const endDate = new Date(app.end_time);
+        const endDateString = `${endDate.getFullYear()}-${String(endDate.getMonth() + 1).padStart(2, '0')}-${String(endDate.getDate()).padStart(2, '0')}`;
+        return endDateString === dateString;
+      }
+      
+      return false;
+    });
   };
 
   // 使用 useMemo 緩存當前日期的預約，避免重複過濾
@@ -477,7 +676,10 @@ export default function CalendarPage() {
   const getTodayAppointments = () => {
     const today = new Date();
     const todayString = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-    return appointments.filter((app) => app.date === todayString);
+    return appointments.filter((app) => {
+      // 使用 date 欄位進行比對，避免時區轉換造成的混淆
+      return app.date === todayString;
+    });
   };
 
   const getDaysInMonth = (date: Date) => {
@@ -489,8 +691,8 @@ export default function CalendarPage() {
   };
 
   const getAppointmentsForDay = (day: number) => {
-    const dateString = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
-    return appointments.filter((app) => app.date === dateString);
+    const date = new Date(currentDate.getFullYear(), currentDate.getMonth(), day);
+    return getAppointmentsForDate(date);
   };
 
   // 使用 useMemo 緩存 Header 需要的數據，避免每次渲染都重新計算
@@ -499,10 +701,25 @@ export default function CalendarPage() {
     const totalApps = todayApps.length;
     const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
     const completedApps = todayApps.filter(app => {
-      const [hours, minutes] = app.time.split(':').map(Number);
-      const appMinutes = hours * 60 + minutes;
-      const duration = parseRemainingTime(app.remainingTime);
-      const appEndMinutes = appMinutes + duration;
+      // 使用 start_time 計算本地時間，統一使用 UTC + 台灣時區偏移方法
+      let appStartMinutes = 0;
+      let duration = 0;
+
+      if (app.start_time) {
+        // 使用 start_time 轉換為台灣本地時間
+        const timeStr = getTimeFromStart(app.start_time);
+        const [hours, minutes] = timeStr.split(':').map(Number);
+        appStartMinutes = hours * 60 + minutes;
+      }
+
+      // 計算時長
+      if (app.calculatedDuration) {
+        duration = app.calculatedDuration;
+      } else {
+        duration = parseRemainingTime(app.remainingTime);
+      }
+
+      const appEndMinutes = appStartMinutes + duration;
       return currentMinutes >= appEndMinutes;
     }).length;
     const progress = totalApps > 0 ? Math.round((completedApps / totalApps) * 100) : 0;
@@ -511,14 +728,21 @@ export default function CalendarPage() {
 
   // 核心狀態與每秒更新
   useEffect(() => {
-    // 確保每秒精準更新，這是動態效果的靈魂
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
+    // 使用 dayjs 統一處理時區轉換，確保獲取正確的台灣時間
+    const getTaipeiTime = () => {
+      return dayjs().tz('Asia/Taipei').toDate();
+    };
+    const timer = setInterval(() => setCurrentTime(getTaipeiTime()), 1000);
+    // 初始化時立即設置一次
+    setCurrentTime(getTaipeiTime());
     return () => clearInterval(timer);
   }, []);
   const [showYearDropdown, setShowYearDropdown] = useState(false);
   const [showMonthDropdown, setShowMonthDropdown] = useState(false);
   const [selectedAppointment, setSelectedAppointment] = useState<Appointment | null>(null);
   const [selectedCustomer, setSelectedCustomer] = useState<any | null>(null);
+  const [isLoadingCustomer, setIsLoadingCustomer] = useState(false);
+  const [isLoadingAppointments, setIsLoadingAppointments] = useState(false);
   const [showSheet, setShowSheet] = useState(false);
   const [viewMode, setViewMode] = useState<"day" | "week" | "month">("month");
   const [showTimeline, setShowTimeline] = useState(true);
@@ -568,54 +792,49 @@ export default function CalendarPage() {
   ));
 
   // 標籤按鈕組件（使用 React.memo 避免不必要的重繪）
-  const TagButtons = React.memo(({ tags, onAdd }: { tags: string[], onAdd: (tag: string) => void }) => (
-    <div className="flex flex-wrap gap-2">
-      <button
-        type="button"
-        onClick={() => onAdd('新客')}
-        disabled={tags.includes('新客')}
-        className="px-3 py-1 bg-green-500 text-white rounded-md text-xs font-medium hover:bg-green-600 transition-colors disabled:opacity-50"
-      >
-        + 新客
-      </button>
-      <button
-        type="button"
-        onClick={() => onAdd('VIP')}
-        disabled={tags.includes('VIP')}
-        className="px-3 py-1 bg-amber-400 text-black rounded-md text-xs font-medium hover:bg-amber-500 transition-colors disabled:opacity-50"
-      >
-        + VIP
-      </button>
-      <button
-        type="button"
-        onClick={() => onAdd('特殊注意')}
-        disabled={tags.includes('特殊注意')}
-        className="px-3 py-1 bg-orange-400 text-white rounded-md text-xs font-medium hover:bg-orange-500 transition-colors disabled:opacity-50"
-      >
-        + 特殊注意
-      </button>
-    </div>
-  ));
+  const TagButtons = React.memo(({ tags, onToggle }: { tags: string[], onToggle: (tag: string) => void }) => {
+    const commonTags = ['新客', 'VIP', '特殊注意'];
+    const allTags = [...commonTags, ...tags.filter(t => !commonTags.includes(t))];
+    
+    return (
+      <div className="flex flex-wrap gap-2">
+        {allTags.map((tag) => (
+          <button
+            key={tag}
+            type="button"
+            onClick={() => onToggle(tag)}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+              tags.includes(tag)
+                ? 'bg-[#1A1A1A] text-white'
+                : 'bg-[#F4F4F5] text-[#1A1A1A] hover:bg-[#E5E5E6]'
+            }`}
+          >
+            {tag}
+          </button>
+        ))}
+      </div>
+    );
+  });
 
-  // 類別切換按鈕組件（使用 React.memo 避免不必要的重繪）
+  // 類別切換按鈕組件（優化響應速度）
   const CategoryToggle = React.memo(({ category, onChange }: { category: 'booking' | 'activity', onChange: (cat: 'booking' | 'activity') => void }) => (
     <div className="relative flex items-center bg-gray-100 rounded-xl p-1 min-w-0">
       <div
-        className={`absolute h-[calc(100%-8px)] bg-black rounded-lg shadow-sm transition-all duration-300 ease-out ${
+        className={`absolute h-[calc(100%-8px)] bg-black rounded-lg shadow-sm transition-all duration-150 ease-out ${
           category === 'booking' ? "left-1 w-[calc(50%-9px)]" : "left-[calc(50%+1px)] w-[calc(50%-9px)]"
         }`}
       />
       <button
-        onClick={() => startTransition(() => onChange('booking'))}
-        className={`relative z-10 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium ${
+        onClick={() => onChange('booking')}
+        className={`relative z-10 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-colors duration-150 ${
           category === 'booking' ? 'text-white' : 'text-gray-600 hover:text-gray-900'
         }`}
       >
         預約服務
       </button>
       <button
-        onClick={() => startTransition(() => onChange('activity'))}
-        className={`relative z-10 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium ${
+        onClick={() => onChange('activity')}
+        className={`relative z-10 flex-1 py-2.5 px-4 rounded-lg text-sm font-medium transition-colors duration-150 ${
           category === 'activity' ? 'text-white' : 'text-gray-600 hover:text-gray-900'
         }`}
       >
@@ -693,19 +912,23 @@ export default function CalendarPage() {
     debouncedCheckBlacklist(phone);
   };
 
-  // 即時檢測時間衝突
+  // 高效區段比對：使用 dayjs 進行精確的時間區段重疊檢測
   const checkTimeConflict = (date: string, time: string, duration: string, excludeId?: string) => {
     if (!date || !time || !duration) {
       setTimeWarning({ type: 'none' });
       return;
     }
 
-    const [hours, minutes] = time.split(':').map(Number);
-    const appointmentDateTime = new Date(date);
-    appointmentDateTime.setHours(hours, minutes, 0, 0);
-    
+    // 強制型別轉換：確保 duration 為數字
     const durationNum = parseInt(duration, 10);
-    const newAppointmentEndTime = new Date(appointmentDateTime.getTime() + durationNum * 60000);
+    if (isNaN(durationNum) || durationNum <= 0) {
+      setTimeWarning({ type: 'none' });
+      return;
+    }
+
+    // 使用 dayjs 建立新預約的時間區段
+    const newStart = dayjs(`${date}T${time}`);
+    const newEnd = newStart.add(durationNum, 'minute');
 
     // 獲取同一天的所有預約
     const sameDayAppointments = appointments.filter(app => 
@@ -718,41 +941,38 @@ export default function CalendarPage() {
     let conflictMessage = '';
 
     for (const existingApp of sameDayAppointments) {
-      const [existingHours, existingMinutes] = existingApp.time.split(':').map(Number);
-      const existingAppointmentTime = new Date(date);
-      existingAppointmentTime.setHours(existingHours, existingMinutes, 0, 0);
+      if (!existingApp.start_time || !existingApp.end_time) continue;
 
-      const existingDuration = parseRemainingTime(existingApp.remainingTime);
-      const existingAppointmentEndTime = new Date(existingAppointmentTime.getTime() + existingDuration * 60000);
+      // 使用 dayjs 建立現有預約的時間區段
+      const existStart = dayjs(existingApp.start_time);
+      const existEnd = dayjs(existingApp.end_time);
 
-      // 檢查新預約是否與現有預約重疊
-      if (appointmentDateTime < existingAppointmentEndTime && newAppointmentEndTime > existingAppointmentTime) {
+      // 第一性原理：A開始 < B結束 且 A結束 > B開始 = 重疊
+      if (newStart.isBefore(existEnd) && newEnd.isAfter(existStart)) {
         hasOverlap = true;
         conflictMessage = `⚠️ 時間重疊：此預約與「${existingApp.customerName}」的預約時間重疊`;
         break;
       }
 
-      // 檢查間隔是否少於10分鐘（包含間隔為 0 的情況）
-      const gapBefore = appointmentDateTime.getTime() - existingAppointmentEndTime.getTime();
-      const gapAfter = existingAppointmentTime.getTime() - newAppointmentEndTime.getTime();
+      // 檢查間隔是否少於10分鐘
+      const gapBefore = newStart.diff(existEnd, 'minute');
+      const gapAfter = existStart.diff(newEnd, 'minute');
 
-      if (gapBefore >= 0 && gapBefore < 10 * 60000) {
+      if (gapBefore >= 0 && gapBefore < 10) {
         hasShortGap = true;
-        const gapMinutes = Math.round(gapBefore / 60000);
-        if (gapMinutes === 0) {
+        if (gapBefore === 0) {
           conflictMessage = `⚠️ 完全沒有間距：與「${existingApp.customerName}」緊鄰，可能會導致訂單阻塞（建議至少 10 分鐘）`;
         } else {
-          conflictMessage = `⚠️ 間隔較短：與「${existingApp.customerName}」間隔 ${gapMinutes} 分鐘（建議至少 10 分鐘）`;
+          conflictMessage = `⚠️ 間隔較短：與「${existingApp.customerName}」間隔 ${gapBefore} 分鐘（建議至少 10 分鐘）`;
         }
       }
 
-      if (gapAfter >= 0 && gapAfter < 10 * 60000) {
+      if (gapAfter >= 0 && gapAfter < 10) {
         hasShortGap = true;
-        const gapMinutes = Math.round(gapAfter / 60000);
-        if (gapMinutes === 0) {
+        if (gapAfter === 0) {
           conflictMessage = `⚠️ 完全沒有間距：與「${existingApp.customerName}」緊鄰，可能會導致訂單阻塞（建議至少 10 分鐘）`;
         } else {
-          conflictMessage = `⚠️ 間隔較短：與「${existingApp.customerName}」間隔 ${gapMinutes} 分鐘（建議至少 10 分鐘）`;
+          conflictMessage = `⚠️ 間隔較短：與「${existingApp.customerName}」間隔 ${gapAfter} 分鐘（建議至少 10 分鐘）`;
         }
       }
     }
@@ -766,31 +986,72 @@ export default function CalendarPage() {
     }
   };
 
-  // 新增預約彈窗的獨立狀態，避免過度渲染
-  const [dialogCategory, setDialogCategory] = useState<'booking' | 'activity'>('booking');
-  const [dialogCustomerName, setDialogCustomerName] = useState('');
-  const [dialogService, setDialogService] = useState('');
-  const [dialogServiceType, setDialogServiceType] = useState<'nail' | 'eyelash' | 'hair' | 'other'>('nail');
-  const [dialogDate, setDialogDate] = useState('');
-  const [dialogTime, setDialogTime] = useState('');
-  const [dialogDuration, setDialogDuration] = useState('');
-  const [dialogCustomerInfo, setDialogCustomerInfo] = useState('');
-  const [dialogTags, setDialogTags] = useState<string[]>([]);
+  // TODO: Replace with real API from settings table
+  // Mock services data for service selection dropdown
+  const mockServices = [
+    { id: '1', name: '男士護理', duration: 45, price: 500, type: 'hair' },
+    { id: '2', name: '法式美甲', duration: 120, price: 1200, type: 'nail' },
+    { id: '3', name: '日式美甲', duration: 90, price: 1000, type: 'nail' },
+    { id: '4', name: '美睫嫁接', duration: 60, price: 800, type: 'eyelash' },
+    { id: '5', name: '洗剪吹', duration: 30, price: 300, type: 'hair' },
+    { id: '6', name: '染髮', duration: 150, price: 2000, type: 'hair' },
+    { id: '7', name: '燙髮', duration: 180, price: 2500, type: 'hair' },
+    { id: '8', name: '手足護理', duration: 45, price: 400, type: 'other' },
+  ];
+
+  // 新增預約彈窗狀態：整合為單一 formState 物件，避免渲染風暴
+  const [dialogFormState, setDialogFormState] = useState({
+    category: 'booking' as 'booking' | 'activity',
+    customerName: '',
+    service: '',
+    serviceType: 'nail' as 'nail' | 'eyelash' | 'hair' | 'other',
+    date: '',
+    time: '',
+    duration: '',
+    price: '', // 價格欄位
+    phone: '',
+    email: '',
+    notes: '',
+    tags: [] as string[]
+  });
 
   // 重置彈窗狀態
   const resetDialogState = () => {
-    setDialogCategory('booking');
-    setDialogCustomerName('');
-    setDialogService('');
-    setDialogServiceType('nail');
-    setDialogDate('');
-    setDialogTime('');
-    setDialogDuration('');
-    setDialogCustomerInfo('');
-    setDialogTags([]);
+    setDialogFormState({
+      category: 'booking',
+      customerName: '',
+      service: '',
+      serviceType: 'nail',
+      date: '',
+      time: '',
+      duration: '',
+      price: '',
+      phone: '',
+      email: '',
+      notes: '',
+      tags: []
+    });
     setBlacklistWarning({ isBlacklisted: false });
     setTimeWarning({ type: 'none' });
   };
+
+  // 更新表單狀態的輔助函數
+  const updateDialogFormState = (updates: Partial<typeof dialogFormState>) => {
+    setDialogFormState(prev => ({ ...prev, ...updates }));
+  };
+
+  // 優化：預先計算表單欄位的顯示狀態，避免重複計算
+  const formFieldsVisibility = useMemo(() => ({
+    showCustomerFields: dialogFormState.category === 'booking',
+    showServiceField: dialogFormState.category === 'booking',
+    showPriceField: dialogFormState.category === 'booking',
+    showNotesField: dialogFormState.category === 'activity',
+    customerLabel: dialogFormState.category === 'booking' ? '客戶名稱' : '活動名稱',
+    customerPlaceholder: dialogFormState.category === 'booking' ? '請輸入客戶名稱' : '請輸入活動名稱（如：教育訓練、領貨）',
+    timeLabel: dialogFormState.category === 'booking' ? '開始時間' : '活動時間',
+    durationLabel: dialogFormState.category === 'booking' ? '預計花費時間（分鐘）' : '持續時間（分鐘）',
+    durationPlaceholder: dialogFormState.category === 'booking' ? '請輸入預計花費時間' : '請輸入持續時間'
+  }), [dialogFormState.category]);
 
   const [newAppointment, setNewAppointment] = useState<{
     category: 'booking' | 'activity';
@@ -829,22 +1090,22 @@ export default function CalendarPage() {
 
   // 監聽新增預約的時間變化（使用 requestIdleCallback 避免阻塞輸入）
   useEffect(() => {
-    if (showAddDialog && dialogCategory === 'booking') {
+    if (showAddDialog && dialogFormState.category === 'booking') {
       // 使用 requestIdleCallback 在瀏覽器空閒時執行檢查
       if (typeof window !== 'undefined' && 'requestIdleCallback' in window) {
         const idleCallbackId = (window as any).requestIdleCallback(() => {
-          checkTimeConflict(dialogDate, dialogTime, dialogDuration);
+          checkTimeConflict(dialogFormState.date, dialogFormState.time, dialogFormState.duration);
         });
         return () => (window as any).cancelIdleCallback(idleCallbackId);
       } else {
         // 降級方案：使用 setTimeout
         const timeoutId = setTimeout(() => {
-          checkTimeConflict(dialogDate, dialogTime, dialogDuration);
+          checkTimeConflict(dialogFormState.date, dialogFormState.time, dialogFormState.duration);
         }, 0);
         return () => clearTimeout(timeoutId);
       }
     }
-  }, [showAddDialog, dialogDate, dialogTime, dialogDuration, dialogCategory]);
+  }, [showAddDialog, dialogFormState.date, dialogFormState.time, dialogFormState.duration, dialogFormState.category]);
 
   // 點擊外部關閉下拉選單
   useEffect(() => {
@@ -881,7 +1142,7 @@ export default function CalendarPage() {
   const [extendMinutes, setExtendMinutes] = useState<number>(5);
   const [customExtendMinutes, setCustomExtendMinutes] = useState<string>('');
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<'end_early' | 'no_show' | 'extend' | null>(null);
+  const [confirmAction, setConfirmAction] = useState<'end_early' | 'no_show' | 'extend' | 'cancel' | null>(null);
   const [confirmAppointmentId, setConfirmAppointmentId] = useState<string | null>(null);
 
   // Hover 詳細資訊卡狀態
@@ -889,19 +1150,19 @@ export default function CalendarPage() {
   const [hoverPosition, setHoverPosition] = useState({ x: 0, y: 0 });
   const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
-  // 下班彩蛋訊息
-  const offWorkMessages = [
-    "「今日滿分！」",
-    "Done!",
-    "「辛苦啦，女神」",
-    "Off Work!",
-    "「該休息嘍 ☕」",
-    "Cheers!",
-    "「明天見 😊」",
-    "Relax",
-    "「今天也很棒！」",
-    "Good Night ✨"
-  ];
+  // 下班彩蛋訊息 - 移出 useEffect 避免重複宣告
+const OFF_WORK_MESSAGES = [
+  "「今日滿分！」",
+  "Done!",
+  "「辛苦啦，女神」",
+  "Off Work!",
+  "「該休息嘍 ☕」",
+  "Cheers!",
+  "「明天見 😊」",
+  "Relax",
+  "「今天也很棒！」",
+  "Good Night ✨"
+] as const;
   const [offWorkMessage, setOffWorkMessage] = useState<string | null>(null);
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
 
@@ -933,7 +1194,7 @@ export default function CalendarPage() {
   // 下班彩蛋邏輯
   useEffect(() => {
     if (viewMode === "day") {
-      const dayApps = getAppointmentsForDate(currentDate).sort((a, b) => a.time.localeCompare(b.time));
+      const dayApps = sortAppointments(getAppointmentsForDate(currentDate), currentDate);
 
       if (dayApps.length === 0) {
         setOffWorkMessage(null);
@@ -942,12 +1203,20 @@ export default function CalendarPage() {
 
       // 計算最後一筆預約的結束時間
       const lastAppointment = dayApps[dayApps.length - 1];
-      const [lastHours, lastMinutes] = lastAppointment.time.split(':').map(Number);
-      const lastAppointmentTime = new Date(currentDate);
-      lastAppointmentTime.setHours(lastHours, lastMinutes, 0, 0);
+      let endTime: Date;
 
-      const serviceDuration = parseRemainingTime(lastAppointment.remainingTime);
-      const endTime = new Date(lastAppointmentTime.getTime() + serviceDuration * 60000);
+      if (lastAppointment.start_time && lastAppointment.end_time) {
+        // 使用 UTC 的 start_time 和 end_time，轉換為本地時間
+        endTime = new Date(lastAppointment.end_time);
+      } else {
+        // 後備方案：使用 start_time 欄位
+        const lastTimeStr = getTimeFromStart(lastAppointment.start_time);
+        const [lastHours, lastMinutes] = lastTimeStr.split(':').map(Number);
+        const lastAppointmentTime = new Date(currentDate);
+        lastAppointmentTime.setHours(lastHours, lastMinutes, 0, 0);
+        const serviceDuration = parseRemainingTime(lastAppointment.remainingTime);
+        endTime = new Date(lastAppointmentTime.getTime() + serviceDuration * 60000);
+      }
 
       // 檢查當前時間是否已經過了最後一筆預約的結束時間
       if (currentTime >= endTime) {
@@ -1006,7 +1275,8 @@ export default function CalendarPage() {
 
         // 如果有預約且當前時間早於第一筆預約，滾動到頂部
         if (dayApps.length > 0) {
-          const [firstHours, firstMinutes] = dayApps[0].time.split(':').map(Number);
+          const firstTimeStr = getTimeFromStart(dayApps[0].start_time);
+          const [firstHours, firstMinutes] = firstTimeStr.split(':').map(Number);
           const firstAppointmentMinutes = firstHours * 60 + firstMinutes;
           if (currentMinutes < firstAppointmentMinutes) {
             // 滾動到頂部
@@ -1029,24 +1299,100 @@ export default function CalendarPage() {
   }, [viewMode, currentDate, highlightAppointmentId]);
 
   useEffect(() => {
-    const loadBookings = async () => {
-      const bookings = await fetchBookingsFromSupabase(supabase, toast);
-      if (bookings.length > 0) {
-        setAppointments(bookings);
-      } else {
-        const localData = localStorage.getItem('appointments');
-        if (localData) {
-          setAppointments(JSON.parse(localData));
+    // 直接抓取並設定狀態
+    setIsLoadingAppointments(true);
+    fetchBookingsFromSupabase(supabase, toast).then((data) => {
+      // 在前端過濾 confirmed 和 completed 狀態
+      const confirmedBookings = data.filter((booking: any) => 
+        booking.status === 'confirmed' || booking.status === 'completed'
+      );
+
+      // 保留資料庫的 date 欄位，只從 start_time 提取 time 欄位
+      const enrichedBookings = confirmedBookings.map((booking: any) => {
+        if (booking.start_time) {
+          const timePart = booking.start_time.split('T')[1];
+          const timeWithoutMs = timePart.split('.')[0];
+          return {
+            ...booking,
+            time: timeWithoutMs
+          };
         }
-      }
+        return booking;
+      });
+
+      // 防止過度渲染：只在數據真正變化時更新
+      setAppointments(prev => {
+        const prevIds = prev.map((a: any) => a.id).sort().join(',');
+        const newIds = enrichedBookings.map((a: any) => a.id).sort().join(',');
+
+        if (prevIds === newIds && prev.length === enrichedBookings.length) {
+          return prev;
+        }
+
+        return enrichedBookings;
+      });
+    }).finally(() => {
+      setIsLoadingAppointments(false);
+    });
+
+    // 自動更新已過期的預約狀態
+    autoUpdateExpiredBookings();
+
+    // 設置 Realtime 監聽
+    const channel = supabase
+      .channel('calendar-bookings-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'bookings'
+        },
+        () => {
+          // 重新抓取數據
+          fetchBookingsFromSupabase(supabase, toast).then((data) => {
+            const confirmedBookings = data.filter((booking: any) => 
+              booking.status === 'confirmed' || booking.status === 'completed'
+            );
+            // 保留資料庫的 date 欄位，只從 start_time 提取 time 欄位
+            const enrichedBookings = confirmedBookings.map((booking: any) => {
+              if (booking.start_time) {
+                const timePart = booking.start_time.split('T')[1];
+                const timeWithoutMs = timePart.split('.')[0];
+                return {
+                  ...booking,
+                  time: timeWithoutMs
+                };
+              }
+              return booking;
+            });
+            setAppointments(enrichedBookings);
+          });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
     };
-    loadBookings();
   }, []);
 
   // 強制重新載入數據
   const handleForceRefresh = async () => {
     const bookings = await fetchBookingsFromSupabase(supabase, toast);
-    setAppointments(bookings);
+    // 保留資料庫的 date 欄位，只從 start_time 提取 time 欄位
+    const enrichedBookings = bookings.map((booking: any) => {
+      if (booking.start_time) {
+        const timePart = booking.start_time.split('T')[1];
+        const timeWithoutMs = timePart.split('.')[0];
+        return {
+          ...booking,
+          time: timeWithoutMs
+        };
+      }
+      return booking;
+    });
+    setAppointments(enrichedBookings);
   };
 
   // 儲存預約資料到 localStorage (debounce 避免頻繁寫入)
@@ -1060,6 +1406,27 @@ export default function CalendarPage() {
 
   const years = Array.from({ length: 10 }, (_, i) => new Date().getFullYear() - 5 + i);
   const months = ["1月", "2月", "3月", "4月", "5月", "6月", "7月", "8月", "9月", "10月", "11月", "12月"];
+
+  // 使用 useMemo 處理 events
+  const events = useMemo(() => {
+    if (appointments.length === 0) return [];
+
+    return appointments.map((b, index) => {
+      const uniqueId = `${b.id}-${index}`;
+      return {
+        id: uniqueId,
+        title: b.customerName,
+        start: b.start_time,
+        end: b.end_time || b.start_time,
+        resource: b.id
+      };
+    });
+  }, [appointments]);
+
+  // 掛載檢查：防止伺服器與客戶端 DOM 不一致
+  if (!isClient) {
+    return <div className="space-y-4">載入中...</div>;
+  }
 
   const handleYearChange = (year: number) => {
     setCurrentDate(new Date(year, currentDate.getMonth(), 1));
@@ -1110,16 +1477,30 @@ export default function CalendarPage() {
 
   const handleAppointmentClick = async (appointment: Appointment) => {
     setSelectedAppointment(appointment);
-    
+    setIsLoadingCustomer(true);
+    setShowSheet(true); // 立即開啟 Modal，顯示 Loading 狀態
+
     // 從 customers 表獲取顧客資料
-    if (appointment.phone) {
-      const customer = await getCustomerByPhone(supabase, appointment.phone);
-      setSelectedCustomer(customer);
-    } else {
-      setSelectedCustomer(null);
+    try {
+      if (appointment.phone) {
+        const customer = await getCustomerByPhone(supabase, appointment.phone);
+        setSelectedCustomer(customer);
+
+        // 獲取顧客歷史紀錄（status = completed）
+        const history = await fetchCustomerHistoryFromSupabase(supabase, appointment.phone);
+        setSelectedAppointment(prev => prev ? { ...prev, history } : null);
+      } else {
+        setSelectedCustomer(null);
+      }
+    } catch (error) {
+      console.error('獲取顧客資料失敗:', error);
+      toast({
+        title: "資料加載失敗",
+        description: "請稍後再試"
+      });
+    } finally {
+      setIsLoadingCustomer(false);
     }
-    
-    setShowSheet(true);
   };
 
   const handleTimelineAppointmentClick = (appointment: Appointment) => {
@@ -1135,20 +1516,25 @@ export default function CalendarPage() {
     setTimeWarning({ type: 'none' });
     
     // 從受控狀態讀取輸入值
-    const customerName = dialogCustomerName;
-    const customerInfo = customerInfoRef.current?.value || '';
-    const service = dialogService;
-    const time = dialogTime;
-    const duration = dialogDuration;
+    const customerName = dialogFormState.customerName;
+    const phone = dialogFormState.phone;
+    const email = dialogFormState.email;
+    const service = dialogFormState.service;
+    const time = dialogFormState.time;
+    const duration = dialogFormState.duration;
     
     const newErrorFields = new Set<string>();
     const missingFieldNames: string[] = [];
     
     if (!customerName) {
       newErrorFields.add("customerName");
-      missingFieldNames.push(dialogCategory === 'booking' ? "客戶名稱" : "活動名稱");
+      missingFieldNames.push(dialogFormState.category === 'booking' ? "客戶名稱" : "活動名稱");
     }
-    if (!dialogDate) {
+    if (dialogFormState.category === 'booking' && !phone) {
+      newErrorFields.add("phone");
+      missingFieldNames.push("聯絡電話");
+    }
+    if (!dialogFormState.date) {
       newErrorFields.add("date");
       missingFieldNames.push("日期");
     }
@@ -1169,7 +1555,7 @@ export default function CalendarPage() {
         missingFieldNames.push("預計花費時間必須為5分鐘的倍數");
       }
     }
-    if (dialogCategory === 'booking' && !service) {
+    if (dialogFormState.category === 'booking' && !service) {
       newErrorFields.add("service");
       missingFieldNames.push("服務名稱");
     }
@@ -1178,7 +1564,7 @@ export default function CalendarPage() {
       setErrorFields(newErrorFields);
       setErrorMessage({
         title: "哎呀，資訊還沒填完整呢！",
-        description: `請幫我填寫${missingFieldNames.join("、")}，這樣我才能幫您新增${dialogCategory === 'booking' ? '預約' : '活動'}喔～`
+        description: `請幫我填寫${missingFieldNames.join("、")}，這樣我才能幫您新增${dialogFormState.category === 'booking' ? '預約' : '活動'}喔～`
       });
       setShowErrorDialog(true);
       
@@ -1192,7 +1578,7 @@ export default function CalendarPage() {
 
     // 檢查時間是否早於現在時間
     const [hours, minutes] = time.split(':').map(Number);
-    const appointmentDateTime = new Date(dialogDate);
+    const appointmentDateTime = new Date(dialogFormState.date);
     appointmentDateTime.setHours(hours, minutes, 0, 0);
     
     if (appointmentDateTime < currentTime) {
@@ -1219,14 +1605,9 @@ export default function CalendarPage() {
       'other': '其他'
     };
 
-    if (dialogCategory === 'booking') {
-      // 解析 customerInfo 為 phone 和 email
-      const parts = customerInfo.split('/').map(p => p.trim());
-      const phone = parts[0] || '';
-      const email = parts[1] || '';
-
+    if (dialogFormState.category === 'booking') {
       // CRM 邏輯：根據電話號碼查找或創建顧客
-      let finalTags = [...dialogTags];
+      let finalTags = [...dialogFormState.tags];
       
       if (phone) {
         // 使用 CRM 函數查找或創建顧客
@@ -1261,12 +1642,12 @@ export default function CalendarPage() {
 
       const newApp: Appointment = {
         id: Date.now().toString(),
-        category: dialogCategory,
+        category: dialogFormState.category,
         customerName: customerName,
         service: service,
-        serviceType: dialogServiceType,
-        serviceAbbr: serviceAbbrMap[dialogServiceType] || '其他',
-        date: dialogDate,
+        serviceType: dialogFormState.serviceType,
+        serviceAbbr: serviceAbbrMap[dialogFormState.serviceType] || '其他',
+        date: dialogFormState.date,
         time: time,
         remainingTime: `${duration}分`,
         phone: phone,
@@ -1278,20 +1659,36 @@ export default function CalendarPage() {
 
       // 根據時間排序（早的在前面，晚的在後面）
       const sortedAppointments = [...appointments, newApp].sort((a, b) => {
+        if (!a.date || !b.date) return 0;
         if (a.date !== b.date) {
           return a.date.localeCompare(b.date);
         }
-        return a.time.localeCompare(b.time);
+        const timeA = getTimeFromStart(a.start_time);
+        const timeB = getTimeFromStart(b.start_time);
+        return timeA.localeCompare(timeB);
       });
       setAppointments(sortedAppointments);
 
-      // 保存到 Supabase（不等待結果，讓它在背景執行）
-      saveBookingToSupabase(supabase, newApp);
-      
-      toast({
-        title: "預約已成功新增",
-        description: `${customerName} - ${service} 已加入排程`
-      });
+      // 保存到 Supabase（加強錯誤處理）
+      (async () => {
+        try {
+          const saveSuccess = await saveBookingToSupabase(supabase, newApp);
+          if (saveSuccess) {
+            toast({
+              title: "預約已成功新增",
+              description: `${customerName} - ${service} 已加入排程`
+            });
+          }
+        } catch (error: any) {
+          console.error('保存預約失敗:', error);
+          toast({
+            title: "儲存失敗",
+            description: error?.message || "請檢查網路或預約時間衝突"
+          });
+          // 回滾本地狀態：從 appointments 中移除剛才新增的預約
+          setAppointments(prev => prev.filter(app => app.id !== newApp.id));
+        }
+      })();
     } else {
       // 活動類型
       const newEvent: Appointment = {
@@ -1301,13 +1698,13 @@ export default function CalendarPage() {
         service: customerName, // 活動名稱作為服務名稱
         serviceType: 'other',
         serviceAbbr: '活動',
-        date: dialogDate,
+        date: dialogFormState.date,
         time: time,
         remainingTime: `${duration}分`,
-        phone: customerInfo || "", // 將備註存儲在 phone 欄位
+        phone: typeof customerInfoRef.current === 'string' ? customerInfoRef.current : (customerInfoRef.current as any)?.value || "", // 將備註存儲在 phone 欄位
         email: "",
         tags: [],
-        aiNotes: customerInfo || "",
+        aiNotes: typeof customerInfoRef.current === 'string' ? customerInfoRef.current : (customerInfoRef.current as any)?.value || "",
         history: []
       };
 
@@ -1316,17 +1713,32 @@ export default function CalendarPage() {
         if (a.date !== b.date) {
           return a.date.localeCompare(b.date);
         }
-        return a.time.localeCompare(b.time);
+        const timeA = getTimeFromStart(a.start_time);
+        const timeB = getTimeFromStart(b.start_time);
+        return timeA.localeCompare(timeB);
       });
       setAppointments(sortedAppointments);
 
-      // 保存到 Supabase（不等待結果，讓它在背景執行）
-      saveBookingToSupabase(supabase, newEvent);
-      
-      toast({
-        title: "活動已成功新增",
-        description: `${customerName} 已加入排程`
-      });
+      // 保存到 Supabase（加強錯誤處理）
+      (async () => {
+        try {
+          const saveSuccess = await saveBookingToSupabase(supabase, newEvent);
+          if (saveSuccess) {
+            toast({
+              title: "活動已成功新增",
+              description: `${customerName} 已加入排程`
+            });
+          }
+        } catch (error: any) {
+          console.error('保存活動失敗:', error);
+          toast({
+            title: "儲存失敗",
+            description: error?.message || "請檢查網路後重試"
+          });
+          // 回滾本地狀態：從 appointments 中移除剛才新增的活動
+          setAppointments(prev => prev.filter(app => app.id !== newEvent.id));
+        }
+      })();
     }
 
     setShowAddDialog(false);
@@ -1397,7 +1809,8 @@ export default function CalendarPage() {
     }
 
     // 檢查時間是否早於現在時間
-    const [hours, minutes] = newAppointment.time.split(':').map(Number);
+    const timeStr = newAppointment.time || getTimeFromStart(editAppointment.start_time);
+    const [hours, minutes] = timeStr.split(':').map(Number);
     const appointmentDateTime = new Date(editAppointment.date);
     appointmentDateTime.setHours(hours, minutes, 0, 0);
     
@@ -1484,15 +1897,18 @@ export default function CalendarPage() {
 
       // 根據時間排序（早的在前面，晚的在後面）
       const sortedAppointments = updatedAppointments.sort((a, b) => {
+        if (!a.date || !b.date) return 0;
         if (a.date !== b.date) {
           return a.date.localeCompare(b.date);
         }
-        return a.time.localeCompare(b.time);
+        const timeA = getTimeFromStart(a.start_time);
+        const timeB = getTimeFromStart(b.start_time);
+        return timeA.localeCompare(timeB);
       });
       setAppointments(sortedAppointments);
 
       // 保存到 Supabase
-      const saveSuccess = await saveBookingToSupabase(supabase, updatedAppointment);
+      const saveSuccess = await updateBookingToSupabase(supabase, updatedAppointment);
       if (!saveSuccess) {
         toast({
           title: "保存失敗",
@@ -1519,19 +1935,19 @@ export default function CalendarPage() {
 
   const handleEndEarly = async (appointmentId: string) => {
     if (!appointmentId) return;
-    
-    const now = new Date();
-    const currentHours = now.getHours();
-    const currentMinutes = now.getMinutes();
-    const currentEndTime = now.toISOString();
-    
+
+    // 使用 dayjs 獲取台北時間
+    const now = dayjs().tz('Asia/Taipei');
+    const currentEndTime = now.format();
+
     const index = appointments.findIndex(app => app.id === appointmentId);
     if (index !== -1) {
-      const [h, m] = appointments[index].time.split(':').map(Number);
+      const timeStr = getTimeFromStart(appointments[index].start_time);
+      const [h, m] = timeStr.split(':').map(Number);
       const startInMin = h * 60 + m;
-      const currentInMin = currentHours * 60 + currentMinutes;
+      const currentInMin = now.hour() * 60 + now.minute();
       const elapsedMinutes = currentInMin - startInMin;
-      
+
       // 更新本地狀態
       const updatedAppointments = [...appointments];
       updatedAppointments[index] = {
@@ -1541,7 +1957,7 @@ export default function CalendarPage() {
         isActive: false
       };
       setAppointments(updatedAppointments);
-      
+
       // 更新資料庫
       try {
         const { data: { user } } = await supabase.auth.getUser();
@@ -1618,17 +2034,7 @@ export default function CalendarPage() {
             .eq('id', appointmentId)
             .eq('user_id', user.id),
           // Action 2: 使用 CRM 函數標記顧客為黑名單
-          appointment.phone ? markCustomerAsBlacklisted(supabase, appointment.phone, 'no_show') : Promise.resolve(false),
-          // Action 3: 插入到專門的 blacklist 表
-          supabase
-            .from('blacklist')
-            .insert({
-              user_id: user.id,
-              customer_name: appointment.customerName,
-              phone: appointment.phone || null,
-              email: appointment.email || null,
-              reason: 'no_show'
-            })
+          appointment.phone ? markCustomerAsBlacklisted(supabase, appointment.phone, 'no_show') : Promise.resolve(false)
         ]);
 
         // 重新獲取顧客資料更新側邊欄
@@ -1665,19 +2071,32 @@ export default function CalendarPage() {
     }
 
     const appointment = appointments[index];
-    const currentDuration = parseInt(appointment.remainingTime) || 0;
+
+    // 從 duration 欄位讀取當前時長（數字格式）
+    const currentDuration = typeof appointment.duration === 'number'
+      ? appointment.duration
+      : parseInt(appointment.duration?.toString().replace(/[^\d]/g, '') || '0');
     const newDuration = currentDuration + extendMinutes;
-    
+
+    console.log('延長服務時間:', {
+      當前時長: currentDuration,
+      延長分鐘: extendMinutes,
+      新時長: newDuration
+    });
+
     // 衝突檢查：檢查延長後的結束時間是否會撞到下一筆預約
-    const [h, m] = appointment.time.split(':').map(Number);
+    const timeStr = getTimeFromStart(appointment.start_time);
+    const [h, m] = timeStr.split(':').map(Number);
     const startInMin = h * 60 + m;
     const newEndInMin = startInMin + newDuration;
-    
+
     // 找到當天所有預約，按時間排序
     const dayAppointments = appointments.filter(app => app.date === appointment.date);
     const sortedAppointments = dayAppointments.sort((a, b) => {
-      const [ah, am] = a.time.split(':').map(Number);
-      const [bh, bm] = b.time.split(':').map(Number);
+      const timeA = getTimeFromStart(a.start_time);
+      const timeB = getTimeFromStart(b.start_time);
+      const [ah, am] = timeA.split(':').map(Number);
+      const [bh, bm] = timeB.split(':').map(Number);
       return (ah * 60 + am) - (bh * 60 + bm);
     });
     
@@ -1689,7 +2108,8 @@ export default function CalendarPage() {
     let conflictMessage = '';
     
     if (nextAppointment) {
-      const [nextH, nextM] = nextAppointment.time.split(':').map(Number);
+      const nextTimeStr = getTimeFromStart(nextAppointment.start_time);
+      const [nextH, nextM] = nextTimeStr.split(':').map(Number);
       const nextStartInMin = nextH * 60 + nextM;
       
       if (newEndInMin > nextStartInMin) {
@@ -1699,11 +2119,20 @@ export default function CalendarPage() {
       }
     }
     
+    // 使用 dayjs 計算新的結束時間（台北時區）
+    // 直接使用 start_time 的完整日期時間，支援跨日訂單
+    const startDateTime = dayjs(appointment.start_time).tz('Asia/Taipei');
+    const newEndDateTime = startDateTime.add(newDuration, 'minute');
+    const newEndTimeStr = newEndDateTime.format();
+    
     // 更新本地狀態
     const updatedAppointments = [...appointments];
     updatedAppointments[index] = {
       ...appointment,
-      remainingTime: `${newDuration}分`
+      duration: newDuration,
+      remainingTime: `${newDuration}分`,
+      calculatedDuration: newDuration,
+      end_time: newEndTimeStr
     };
     setAppointments(updatedAppointments);
     
@@ -1711,18 +2140,11 @@ export default function CalendarPage() {
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
-      
-      // 計算新的結束時間
-      const appointmentDate = new Date(appointment.date);
-      const startTime = new Date(appointmentDate);
-      startTime.setHours(h, m, 0, 0);
-      const newEndTime = new Date(startTime.getTime() + newDuration * 60 * 1000);
-      const newEndTimeStr = newEndTime.toISOString();
-      
+
       const { error: updateError } = await supabase
         .from('bookings')
         .update({
-          duration: `${newDuration}分`,
+          duration: newDuration,
           end_time: newEndTimeStr
         })
         .eq('id', confirmAppointmentId)
@@ -1768,12 +2190,12 @@ export default function CalendarPage() {
         <div className="flex flex-col gap-2">
           <div className="flex justify-between items-center">
             <span className="text-xs font-mono text-gray-400">ATTAKLY-REC-{hoveredAppointment.id.slice(-4)}</span>
-            {hoveredAppointment.tags.includes("VIP") && (
+            {hoveredAppointment.tags && hoveredAppointment.tags.includes("VIP") && (
               <span className="px-2 py-0.5 bg-amber-400 text-black text-[10px] rounded font-bold">VIP</span>
             )}
           </div>
           
-          <h4 className="text-lg font-bold">{hoveredAppointment.customerName} - {formatTime(hoveredAppointment.time)}</h4>
+          <h4 className="text-lg font-bold">{hoveredAppointment.category === 'activity' ? hoveredAppointment.service : (hoveredAppointment.customerName || '未知顧客')} - {getTimeFromStart(hoveredAppointment.start_time)}</h4>
           
           <div className="h-[1px] bg-white/10 my-1" />
           
@@ -1781,7 +2203,7 @@ export default function CalendarPage() {
             {hoveredAppointment.category === 'booking' && (
               <p className="text-xs text-gray-300">服務：{hoveredAppointment.service}</p>
             )}
-            <p className="text-xs text-gray-300">時長：{hoveredAppointment.remainingTime}</p>
+            <p className="text-xs text-gray-300">時長：{hoveredAppointment.calculatedDuration ? `${hoveredAppointment.calculatedDuration} 分鐘` : hoveredAppointment.remainingTime}</p>
             {hoveredAppointment.aiNotes && (
               <p className="text-xs text-gray-400 mt-2 italic">"{hoveredAppointment.aiNotes}"</p>
             )}
@@ -1812,7 +2234,7 @@ export default function CalendarPage() {
       service: appointment.service,
       serviceType: appointment.serviceType,
       date: appointment.date,
-      time: appointment.time,
+      time: getTimeFromStart(appointment.start_time) || '00:00',
       duration: '',
       customerInfo: customerInfo,
       tags: appointment.tags || []
@@ -1828,11 +2250,8 @@ export default function CalendarPage() {
   const confirmDeleteAppointment = () => {
     if (!editAppointment) return;
 
-    // 從 Supabase 刪除
+    // 從 Supabase 刪除（軟刪除：is_deleted = true, status = 'cancelled'）
     deleteBookingFromSupabase(supabase, editAppointment.id);
-
-    // 保存到 deleted_bookings 表格
-    saveDeletedBookingToSupabase(supabase, editAppointment);
 
     // 儲存到刪除記錄（最多5筆）
     setDeletedAppointments(prev => {
@@ -1850,29 +2269,55 @@ export default function CalendarPage() {
     setEditAppointment(null);
   };
 
-  const restoreAppointment = (appointment: Appointment) => {
-    // 檢查預約是否已存在
-    const alreadyExists = appointments.some(app => app.id === appointment.id);
+const handleRestoreDeletedAppointment = async (appointment: Appointment) => {
+  // 檢查預約是否已存在於當前列表中
+  const alreadyExists = appointments.some(app => app.id === appointment.id);
 
-    if (alreadyExists) {
-      // 從刪除記錄中移除
-      deleteDeletedBookingFromSupabase(supabase, appointment.id);
-      setDeletedAppointments(prev => prev.filter(app => app.id !== appointment.id));
+  if (alreadyExists) {
+    // 預約已經在列表中，直接從刪除記錄中移除
+    setDeletedAppointments(prev => prev.filter(app => app.id !== appointment.id));
+    return;
+  }
+
+  // 更新資料庫中的記錄：將 is_deleted 設為 false，status 設為 'confirmed'
+  try {
+    const { error } = await supabase
+      .from('bookings')
+      .update({
+        is_deleted: false,
+        status: 'confirmed'
+      })
+      .eq('id', appointment.id);
+
+    if (error) {
+      console.error('Error restoring booking:', error);
+      toast({
+        title: "恢復失敗",
+        description: "無法恢復此預約，請檢查網路連接。"
+      });
       return;
     }
+  } catch (error: any) {
+    console.error('Error restoring booking:', error);
+    toast({
+      title: "恢復失敗",
+      description: "無法恢復此預約，請檢查網路連接。"
+    });
+    return;
+  }
 
-    // 保存到 bookings 表格
-    saveBookingToSupabase(supabase, appointment);
+  // 將預約添加回列表
+  setAppointments([...appointments, appointment]);
+  setDeletedAppointments(prev => prev.filter(app => app.id !== appointment.id));
+  
+  toast({
+    title: "恢復成功",
+    description: "預約已恢復"
+  });
+};
 
-    // 從 deleted_bookings 刪除
-    deleteDeletedBookingFromSupabase(supabase, appointment.id);
-
-    setAppointments([...appointments, appointment]);
-    setDeletedAppointments(prev => prev.filter(app => app.id !== appointment.id));
-  };
-
-  const getServiceTypeColor = (type: string, tags: string[] = []): string => {
-    if (tags.includes("活動")) {
+  const getServiceTypeColor = (type: string | null, tags: string[] | null = []): string => {
+    if (tags && tags.includes("活動")) {
       return "bg-amber-100 text-amber-700 border-amber-200";
     }
     switch (type) {
@@ -1883,12 +2328,12 @@ export default function CalendarPage() {
       case "hair":
         return "bg-[#1A1A1A] text-white border border-white/10 px-2 py-0.5 rounded-full text-[10px]";
       default:
-        return "bg-gray-100 text-gray-700 border border-gray-200 px-2 py-0.5 rounded-full text-[10px]";
+        return "bg-gray-900 text-white border border-gray-700 px-2 py-0.5 rounded-full text-[10px]";
     }
   };
 
-  const getServiceTypeDotColor = (type: string, tags: string[] = []): string => {
-    if (tags.includes("活動")) {
+  const getServiceTypeDotColor = (type: string | null, tags: string[] | null = []): string => {
+    if (tags !== null && tags.includes("活動")) {
       return "bg-amber-500";
     }
     switch (type) {
@@ -1899,7 +2344,7 @@ export default function CalendarPage() {
       case "hair":
         return "bg-[#1A1A1A]";
       default:
-        return "bg-gray-500";
+        return "bg-gray-400";
     }
   };
 
@@ -1949,7 +2394,7 @@ export default function CalendarPage() {
           </span>
           {dayAppointments.length > 0 && (
             <div className="mt-6 flex-1 space-y-1 overflow-y-auto custom-scrollbar">
-              {dayAppointments.sort((a, b) => a.time.localeCompare(b.time)).map((appointment) => (
+              {sortAppointments(dayAppointments, new Date(currentDate.getFullYear(), currentDate.getMonth(), day)).map((appointment) => (
                 <div
                   key={appointment.id}
                   onClick={(e) => {
@@ -1978,19 +2423,26 @@ export default function CalendarPage() {
                   }`}
                 >
                   {/* VIP 黃色色條 */}
-                  {appointment.category === 'booking' && appointment.tags.includes("VIP") && <div className="w-0.5 h-4 bg-yellow-400 rounded-full" />}
+                  {appointment.category === 'booking' && appointment.tags && appointment.tags.includes("VIP") && <div className="w-0.5 h-4 bg-yellow-400 rounded-full" />}
 
                   {/* 時間 */}
                   <span className={`text-[10px] font-bold whitespace-nowrap ${
                     appointment.category === 'activity' ? 'text-gray-600 font-normal' : 'text-white'
-                  }`}>{formatTime(appointment.time)}</span>
+                  }`}>{formatTime(getTimeFromStart(appointment.start_time))}</span>
 
                   {/* 姓名 */}
                   <span className={`text-[11px] truncate flex-1 ${
                     appointment.category === 'activity' ? 'text-gray-600 font-light' : 'text-gray-100 font-medium'
                   }`}>
-                    {appointment.customerName}
+                    {appointment.category === 'activity' ? appointment.service : (appointment.customerName || '未知顧客')}
                   </span>
+
+                  {/* 時長 */}
+                  {appointment.calculatedDuration && (
+                    <span className={`text-[9px] whitespace-nowrap ${
+                      appointment.category === 'activity' ? 'text-gray-500' : 'text-gray-300'
+                    }`}>{appointment.calculatedDuration}分鐘</span>
+                  )}
                 </div>
               ))}
             </div>
@@ -2008,8 +2460,9 @@ export default function CalendarPage() {
                 
                 if (dayAppointments.length > 0) {
                   // 找到最晚的預約
-                  const lastAppointment = dayAppointments.sort((a, b) => b.time.localeCompare(a.time))[0];
-                  const [hours, minutes] = lastAppointment.time.split(':').map(Number);
+                  const lastAppointment = sortAppointments([...dayAppointments], new Date(currentDate.getFullYear(), currentDate.getMonth(), day))[0];
+                  const timeStr = getTimeFromStart(lastAppointment.start_time);
+                  const [hours, minutes] = timeStr.split(':').map(Number);
                   const lastAppointmentTime = new Date(dateStr);
                   lastAppointmentTime.setHours(hours, minutes, 0, 0);
                   
@@ -2024,8 +2477,7 @@ export default function CalendarPage() {
                   suggestedTime = `${suggestedHours}:${suggestedMinutes}`;
                 }
                 
-                setDialogDate(dateStr);
-                setDialogTime(suggestedTime);
+                updateDialogFormState({ date: dateStr, time: suggestedTime });
                 setTimeWarning({ type: 'none' });
                 setShowAddDialog(true);
               }}
@@ -2095,10 +2547,7 @@ export default function CalendarPage() {
           ))}
           {weekDates.map((date) => {
             const isToday = date.toDateString() === today.toDateString();
-            const dayAppointments = appointments.filter((app) => {
-              const appDate = new Date(app.date);
-              return appDate.toDateString() === date.toDateString();
-            });
+            const dayAppointments = getAppointmentsForDate(date);
 
             return (
               <div key={date.toISOString()} className={`min-h-[200px] p-2 hover:bg-gray-50 transition-colors group cursor-pointer relative shadow-sm ${isToday ? 'bg-red-50' : 'bg-white'}`}>
@@ -2110,7 +2559,7 @@ export default function CalendarPage() {
                 </div>
                 {dayAppointments.length > 0 && (
                   <div className="space-y-1">
-                    {dayAppointments.sort((a, b) => a.time.localeCompare(b.time)).map((appointment) => (
+                    {sortAppointments(dayAppointments, date).map((appointment) => (
                       <div
                         key={appointment.id}
                         onClick={(e) => {
@@ -2138,26 +2587,27 @@ export default function CalendarPage() {
                             : 'bg-black hover:bg-gray-900'
                         }`}
                       >
-                        {/* 時間：最醒目 */}
-                        <span className={`text-[10px] font-bold whitespace-nowrap ${
+                        {/* 時間：固定寬度，不可壓縮 */}
+                        <span className={`text-[10px] font-bold whitespace-nowrap flex-shrink-0 ${
                           appointment.category === 'activity' ? 'text-gray-600 font-normal' : 'text-white'
-                        }`}>{formatTime(appointment.time)}</span>
+                        }`}>{formatTime(getTimeFromStart(appointment.start_time))}</span>
 
                         {/* VIP：用符號代替文字 */}
-                        {appointment.category === 'booking' && appointment.tags.includes("VIP") && <span className="text-amber-400 text-[10px]">★</span>}
+                        {appointment.category === 'booking' && appointment.tags && appointment.tags.includes("VIP") && <span className="text-amber-400 text-[10px] flex-shrink-0">★</span>}
 
-                        {/* 姓名：截斷處理 */}
-                        <span className={`text-[11px] truncate flex-1 ${
+                        {/* 姓名：優先顯示，flex-grow，過長時變... */}
+                        <span className={`text-[11px] truncate flex-1 min-w-0 ${
                           appointment.category === 'activity' ? 'text-gray-600 font-light' : 'text-gray-100 font-medium'
                         }`}>
-                          {appointment.customerName}
+                          {appointment.category === 'activity' ? appointment.service : (appointment.customerName || '未知顧客')}
+                          {appointment.category === 'booking' && appointment.service && appointment.service !== '未指定服務' && ` | ${appointment.service}`}
                         </span>
 
-                        {/* 項目：極淡色 - 只在預約時顯示 */}
-                        {appointment.category === 'booking' && (
-                          <span className="text-[9px] text-gray-400 whitespace-nowrap">
-                            {appointment.service}
-                          </span>
+                        {/* 時長：可縮小，空間不足時優先隱藏 */}
+                        {appointment.calculatedDuration && (
+                          <span className={`text-[9px] whitespace-nowrap flex-shrink-0 ${
+                            appointment.category === 'activity' ? 'text-gray-500' : 'text-gray-300'
+                          }`}>{appointment.calculatedDuration}分鐘</span>
                         )}
                       </div>
                     ))}
@@ -2169,14 +2619,15 @@ export default function CalendarPage() {
                     onClick={(e) => {
                       e.stopPropagation();
                       const dateStr = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-                      
+
                       // 計算建議時間：該日期最後一筆預約結束時間 + 10 分鐘
                       const dayAppointments = appointments.filter(app => app.date === dateStr && app.category === 'booking');
                       let suggestedTime = '09:00'; // 預設 9:00
-                      
+
                       if (dayAppointments.length > 0) {
-                        const lastAppointment = dayAppointments.sort((a, b) => b.time.localeCompare(a.time))[0];
-                        const [hours, minutes] = lastAppointment.time.split(':').map(Number);
+                        const lastAppointment = sortAppointments([...dayAppointments], date)[0];
+                        const timeStr = getTimeFromStart(lastAppointment.start_time);
+                        const [hours, minutes] = timeStr.split(':').map(Number);
                         const lastAppointmentTime = new Date(dateStr);
                         lastAppointmentTime.setHours(hours, minutes, 0, 0);
                         
@@ -2189,8 +2640,7 @@ export default function CalendarPage() {
                         suggestedTime = `${suggestedHours}:${suggestedMinutes}`;
                       }
                       
-                      setDialogDate(dateStr);
-                      setDialogTime(suggestedTime);
+                      updateDialogFormState({ date: dateStr, time: suggestedTime });
                       setTimeWarning({ type: 'none' });
                       setShowAddDialog(true);
                     }}
@@ -2208,7 +2658,7 @@ export default function CalendarPage() {
   };
 
   const renderDayView = () => {
-    const dayAppointments = currentDayAppointments.sort((a, b) => a.time.localeCompare(b.time));
+    const dayAppointments = sortAppointments(currentDayAppointments, currentDate);
     const currentTimeStr = currentTime.toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit', hour12: false });
 
     // 檢查是否為過去日期（避免修改 currentDate 物件）
@@ -2220,7 +2670,8 @@ export default function CalendarPage() {
 
     // 計算當前時間是否在第一筆訂單之前
     const isBeforeFirstAppointment = !isPastDate && dayAppointments.length > 0 && (() => {
-      const [firstHours, firstMinutes] = dayAppointments[0].time.split(':').map(Number);
+      const firstTimeStr = getTimeFromStart(dayAppointments[0].start_time);
+      const [firstHours, firstMinutes] = firstTimeStr.split(':').map(Number);
       const firstAppointmentMinutes = firstHours * 60 + firstMinutes;
       const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
       return currentMinutes < firstAppointmentMinutes;
@@ -2229,7 +2680,8 @@ export default function CalendarPage() {
     // 計算當前時間是否在最後一筆訂單結束之後
     const isAfterLastAppointment = !isPastDate && dayAppointments.length > 0 && (() => {
       const lastAppointment = dayAppointments[dayAppointments.length - 1];
-      const [lastHours, lastMinutes] = lastAppointment.time.split(':').map(Number);
+      const lastTimeStr = getTimeFromStart(lastAppointment.start_time);
+      const [lastHours, lastMinutes] = lastTimeStr.split(':').map(Number);
       const lastAppointmentTime = new Date(currentDate);
       lastAppointmentTime.setHours(lastHours, lastMinutes, 0, 0);
       const serviceDuration = parseRemainingTime(lastAppointment.remainingTime);
@@ -2238,7 +2690,7 @@ export default function CalendarPage() {
     })();
 
     // 如果在第一筆訂單之前，顯示第一筆訂單的時間
-    const displayTimeStr = isBeforeFirstAppointment ? dayAppointments[0].time : currentTimeStr;
+    const displayTimeStr = isBeforeFirstAppointment ? getTimeFromStart(dayAppointments[0].start_time) : currentTimeStr;
 
     // 計算下一個活動的時間
     const getNextAppointmentTime = () => {
@@ -2247,19 +2699,46 @@ export default function CalendarPage() {
       const isToday = currentDate.toDateString() === today.toDateString();
       if (!isToday) return null;
       if (isPastDate) return null;
-      const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
-      for (const appointment of dayAppointments) {
-        const [hours, minutes] = appointment.time.split(':').map(Number);
-        const appointmentMinutes = hours * 60 + minutes;
-        if (appointmentMinutes > currentMinutes) {
-          const diffMins = appointmentMinutes - currentMinutes;
-          return {
-            time: `${diffMins} 分鐘後`,
-            category: appointment.category
-          };
+
+      // 找到當前進行中的訂單
+      const nowDateTime = dayjs().tz('Asia/Taipei');
+      let currentActiveAppointment = null;
+      let currentActiveIndex = -1;
+
+      for (let i = 0; i < dayAppointments.length; i++) {
+        const appointment = dayAppointments[i];
+        const startDateTime = dayjs(appointment.start_time).tz('Asia/Taipei');
+        const endDateTime = dayjs(appointment.end_time).tz('Asia/Taipei');
+        const isActive = nowDateTime.isAfter(startDateTime) && nowDateTime.isBefore(endDateTime);
+
+        if (isActive) {
+          currentActiveAppointment = appointment;
+          currentActiveIndex = i;
+          break;
         }
       }
-      return null;
+
+      // 如果沒有進行中的訂單，不顯示
+      if (!currentActiveAppointment) return null;
+
+      // 檢查當前訂單是否已經結束
+      const currentEndDateTime = dayjs(currentActiveAppointment.end_time).tz('Asia/Taipei');
+      if (nowDateTime.isBefore(currentEndDateTime)) return null;
+
+      // 計算下一個預約
+      const nextAppointment = dayAppointments[currentActiveIndex + 1];
+      if (!nextAppointment) return null;
+
+      // 計算間隔時間
+      const nextStartDateTime = dayjs(nextAppointment.start_time).tz('Asia/Taipei');
+      const gapMinutes = nextStartDateTime.diff(currentEndDateTime, 'minute');
+
+      if (gapMinutes <= 0) return null;
+
+      return {
+        time: `${gapMinutes} 分鐘後`,
+        category: nextAppointment.category
+      };
     };
 
     const nextAppointmentTime = getNextAppointmentTime();
@@ -2267,7 +2746,20 @@ export default function CalendarPage() {
     // 計算距離第一筆預約的時間
     const getTimeUntilFirstAppointment = () => {
       if (dayAppointments.length === 0) return null;
-      const [firstHours, firstMinutes] = dayAppointments[0].time.split(':').map(Number);
+      
+      // 檢查第一筆預約是否為跨日訂單（從昨天延續過來）
+      const firstAppointment = dayAppointments[0];
+      if (firstAppointment.start_time) {
+        const startDateTime = dayjs(firstAppointment.start_time).tz('Asia/Taipei');
+        const startDateString = startDateTime.format('YYYY-MM-DD');
+        const currentDateString = dayjs(currentDate).format('YYYY-MM-DD');
+        
+        // 如果第一筆預約的開始日期早於當前日期，則是跨日訂單，不顯示距離提示
+        if (startDateString < currentDateString) return null;
+      }
+      
+      const firstTimeStr = getTimeFromStart(dayAppointments[0].start_time);
+      const [firstHours, firstMinutes] = firstTimeStr.split(':').map(Number);
       
       // 建立預約的完整日期時間物件
       const appointmentDateTime = new Date(currentDate);
@@ -2285,7 +2777,7 @@ export default function CalendarPage() {
     };
 
     return (
-      <div className="space-y-4 animate-in fade-in duration-300" ref={dayViewRef}>
+      <div className="space-y-4 animate-in fade-in duration-300 h-[calc(100vh-200px)] min-h-[600px]" ref={dayViewRef}>
         {/* 大提示：防止看錯日期 */}
         {getTimeUntilFirstAppointment() && (
           <div className="bg-white border border-gray-200 rounded-xl p-4 border-l-4 border-l-red-600">
@@ -2293,7 +2785,7 @@ export default function CalendarPage() {
               現在是 {currentTime.toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' })} ({currentTime.toLocaleDateString('zh-TW', { weekday: 'short' })}) {currentTimeStr}
             </div>
             <div className="text-gray-500 mt-1">
-              您距離第一筆預約 ({dayAppointments[0].time}) 還有 {getTimeUntilFirstAppointment()} 小時。
+              您距離第一筆預約 ({getTimeFromStart(dayAppointments[0].start_time)}) 還有 {getTimeUntilFirstAppointment()} 小時。
             </div>
           </div>
         )}
@@ -2334,8 +2826,13 @@ export default function CalendarPage() {
                   let suggestedTime = '09:00'; // 預設 9:00
                   
                   if (dayAppointments.length > 0) {
-                    const lastAppointment = dayAppointments.sort((a, b) => b.time.localeCompare(a.time))[0];
-                    const [hours, minutes] = lastAppointment.time.split(':').map(Number);
+                    const lastAppointment = dayAppointments.sort((a, b) => {
+                      const timeA = getTimeFromStart(a.start_time);
+                      const timeB = getTimeFromStart(b.start_time);
+                      return timeB.localeCompare(timeA);
+                    })[0];
+                    const timeStr = getTimeFromStart(lastAppointment.start_time);
+                    const [hours, minutes] = timeStr.split(':').map(Number);
                     const lastAppointmentTime = new Date(dateStr);
                     lastAppointmentTime.setHours(hours, minutes, 0, 0);
                     
@@ -2348,8 +2845,7 @@ export default function CalendarPage() {
                     suggestedTime = `${suggestedHours}:${suggestedMinutes}`;
                   }
                   
-                  setDialogDate(dateStr);
-                  setDialogTime(suggestedTime);
+                  updateDialogFormState({ date: dateStr, time: suggestedTime });
                   setTimeWarning({ type: 'none' });
                   setShowAddDialog(true);
                 }}
@@ -2379,22 +2875,44 @@ export default function CalendarPage() {
         {dayAppointments.length > 0 ? (
           <div>
               {dayAppointments.map((appointment, index) => {
-                const [h, m] = appointment.time.split(':').map(Number);
-                const start = h * 60 + m;
-                const end = start + parseRemainingTime(appointment.remainingTime);
-                
-                const now = currentTime.getHours() * 60 + currentTime.getMinutes();
-                // 優先使用 appointment.isFinished 狀態，否則根據時間計算
-                const isFinished = appointment.isFinished || isPastDate || now >= end;
-                const isActive = !appointment.isFinished && !isPastDate && now >= start && now < end;
+                // 使用 dayjs 統一處理時區轉換，以 currentTime (UTC+8) 作為唯一判定標準
+                let start = 0;
+                let end = 0;
+
+                if (appointment.start_time) {
+                  // 使用 dayjs 自動解析時區偏移，然後轉換為台灣本地時間
+                  const startTime = dayjs(appointment.start_time).tz('Asia/Taipei');
+                  start = startTime.hour() * 60 + startTime.minute();
+
+                  if (appointment.end_time) {
+                    const endTime = dayjs(appointment.end_time).tz('Asia/Taipei');
+                    end = endTime.hour() * 60 + endTime.minute();
+                  } else {
+                    // 後備方案：使用 duration 計算
+                    const duration = appointment.calculatedDuration || parseRemainingTime(appointment.remainingTime);
+                    end = start + duration;
+                  }
+                }
+
+                // 使用 dayjs 進行完整的日期時間比較，支援跨日訂單
+                const nowDateTime = dayjs().tz('Asia/Taipei');
+                const startDateTime = dayjs(appointment.start_time).tz('Asia/Taipei');
+                const endDateTime = dayjs(appointment.end_time).tz('Asia/Taipei');
+
+                // 修改邏輯：不依賴日期判定，改為純粹的時間軸判定
+                // 這樣跨日訂單不會因為日期變化而被鎖死
+                const isFinished = nowDateTime.isAfter(endDateTime) || nowDateTime.isSame(endDateTime);
+                const isActive = nowDateTime.isAfter(startDateTime) && nowDateTime.isBefore(endDateTime);
 
                 // 計算空檔：下一單開始時間 - 這一單結束時間
                 const getGapMinutes = () => {
                   const nextApp = dayAppointments[index + 1];
                   if (!nextApp) return 0;
-                  const [h1, m1] = appointment.time.split(':').map(Number);
-                  const [h2, m2] = nextApp.time.split(':').map(Number);
-                  const currentEnd = h1 * 60 + m1 + parseRemainingTime(appointment.remainingTime);
+                  const timeStr1 = getTimeFromStart(appointment.start_time);
+                  const timeStr2 = getTimeFromStart(nextApp.start_time);
+                  const [h1, m1] = timeStr1.split(':').map(Number);
+                  const [h2, m2] = timeStr2.split(':').map(Number);
+                  const currentEnd = h1 * 60 + m1 + (appointment.calculatedDuration || parseRemainingTime(appointment.remainingTime));
                   const nextStart = h2 * 60 + m2;
                   return nextStart - currentEnd;
                 };
@@ -2403,29 +2921,39 @@ export default function CalendarPage() {
 
                 // 倒數計時
                 const renderCountdown = () => {
-                  const [h, m] = appointment.time.split(':').map(Number);
-                  const startTimeInMin = h * 60 + m;
-                  const duration = parseRemainingTime(appointment.remainingTime);
-                  const endTimeInMin = startTimeInMin + duration;
-                  
-                  const nowInMin = currentTime.getHours() * 60 + currentTime.getMinutes();
-                  const nowInSec = currentTime.getSeconds();
-                  
-                  const totalRemainingSec = (endTimeInMin * 60) - (nowInMin * 60 + nowInSec);
-                  
-                  if (totalRemainingSec <= 0) return "即將結束";
+                  // 使用完整的日期時間戳計算剩餘時間（支援跨日訂單）
+                  const nowDateTime = dayjs().tz('Asia/Taipei');
+                  const endDateTime = dayjs(appointment.end_time).tz('Asia/Taipei');
 
-                  const min = Math.floor(totalRemainingSec / 60);
-                  const sec = totalRemainingSec % 60;
+                  const totalRemainingSec = endDateTime.diff(nowDateTime, 'second');
 
-                  return (
-                    <div className="flex items-center space-x-1 font-mono">
-                      <span className="text-xs text-gray-400">剩餘</span>
-                      <span className={`text-sm font-bold ${min < 5 ? 'text-red-500 animate-pulse' : 'text-black'}`}>
-                        {min}:{sec.toString().padStart(2, '0')}
-                      </span>
-                    </div>
-                  );
+                  // 即使時間已過也顯示倒數（0:00）
+                  const displaySec = Math.max(0, totalRemainingSec);
+
+                  // 超過 60 分鐘顯示小時分鐘，小於 60 分鐘顯示分鐘秒
+                  if (displaySec >= 3600) {
+                    const hours = Math.floor(displaySec / 3600);
+                    const minutes = Math.floor((displaySec % 3600) / 60);
+                    return (
+                      <div className="flex items-center space-x-1 font-mono">
+                        <span className="text-xs text-gray-400">剩餘</span>
+                        <span className="text-sm font-bold text-black">
+                          {hours} 小時 {minutes} 分鐘
+                        </span>
+                      </div>
+                    );
+                  } else {
+                    const min = Math.floor(displaySec / 60);
+                    const sec = displaySec % 60;
+                    return (
+                      <div className="flex items-center space-x-1 font-mono">
+                        <span className="text-xs text-gray-400">剩餘</span>
+                        <span className={`text-sm font-bold ${min < 5 ? 'text-red-500 animate-pulse' : 'text-black'}`}>
+                          {min} 分鐘 {sec.toString().padStart(2, '0')} 秒
+                        </span>
+                      </div>
+                    );
+                  }
                 };
 
                 return (
@@ -2438,7 +2966,7 @@ export default function CalendarPage() {
                       
                       {/* 點：根據狀態變色 */}
                       <div className={`w-3.5 h-3.5 rounded-full border-2 z-10 transition-colors mt-6 ${
-                        isFinished ? 'bg-black border-black' : (isActive ? 'bg-red-500 border-red-500' : 'bg-white border-gray-200')
+                        isFinished ? 'bg-white border-gray-300' : (isActive ? 'bg-red-500 border-red-500' : 'bg-black border-black')
                       }`} />
 
                       {/* 紅點指示器：只有 isActive 時才出現，且就在點的旁邊 */}
@@ -2460,13 +2988,13 @@ export default function CalendarPage() {
                           handleAppointmentClick(appointment);
                         }
                       }}
-                      className={`flex-1 rounded-xl p-5 border-l-4 transition-all duration-300 cursor-pointer hover:shadow-md ${
+                      className={`flex-1 rounded-xl p-5 border-l-4 transition-all duration-300 cursor-pointer hover:shadow-md flex flex-col ${
                         appointment.category === 'activity'
                           ? (isActive
                             ? 'bg-gray-100 border-l-gray-400 border-2 border-solid border-gray-400'
                             : 'bg-gray-50/50 border-l-gray-300 border-2 border-dashed border-gray-300 hover:bg-gray-100/50')
                           : (isActive
-                            ? 'bg-red-50/50 border-l-red-500 shadow-md ring-1 ring-red-100'
+                            ? 'bg-white border-l-red-500 shadow-md ring-1 ring-red-100'
                             : (isFinished ? 'bg-gray-50 border-l-transparent opacity-60' : 'bg-white border-l-transparent border border-gray-100 shadow-sm'))
                       } ${highlightAppointmentId === appointment.id ? 'animate-in fade-in duration-500' : ''}`}
                       style={highlightAppointmentId === appointment.id ? {
@@ -2494,6 +3022,21 @@ export default function CalendarPage() {
                           {quickActionMenuId === appointment.id && (
                             <div ref={quickActionMenuRef} className="absolute right-0 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-100 z-30">
                               <div className="py-1">
+                                {/* 編輯：僅在未來預約（白色）時顯示 */}
+                                {/* 修改邏輯：不依賴日期，改為檢查實際時間狀態 */}
+                                {!isActive && !isFinished && (
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setQuickActionMenuId(null);
+                                      openEditDialog(appointment);
+                                    }}
+                                    className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-50"
+                                  >
+                                    編輯
+                                  </button>
+                                )}
+                                <div className="border-t border-gray-100 my-1"></div>
                                 <button
                                   onClick={(e) => {
                                     e.stopPropagation();
@@ -2536,8 +3079,8 @@ export default function CalendarPage() {
                           )}
                         </div>
                       )}
-                      
-                      <div className="flex justify-between items-start">
+
+                      <div className="flex-1 flex justify-between items-start">
                          <div>
                            <div className="flex items-center gap-2">
                              {appointment.category === 'activity' && (
@@ -2552,20 +3095,29 @@ export default function CalendarPage() {
                              )}
                              <span className={`text-lg font-bold ${
                                appointment.category === 'activity' ? 'text-gray-600 font-normal' : ''
-                             }`}>{formatTime(appointment.time)}</span>
-                             {appointment.category === 'booking' && appointment.tags.includes("VIP") && <span className="text-xs font-bold px-2 py-0.5 rounded text-white bg-gray-900">VIP</span>}
+                             }`}>{formatTime(getTimeFromStart(appointment.start_time))}</span>
+                             {isCrossDayBooking(appointment) && (() => {
+                               const dateString = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
+                               const startDate = new Date(appointment.start_time);
+                               const startDateString = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`;
+                               return dateString !== startDateString;
+                             })() && <span className="text-xs font-bold px-2 py-0.5 rounded text-white bg-gray-900">續前日</span>}
+                             {appointment.category === 'booking' && appointment.tags && appointment.tags.includes("VIP") && <span className="text-xs font-bold px-2 py-0.5 rounded text-white bg-gray-900">VIP</span>}
                            </div>
                            <div className="flex items-baseline space-x-2">
                              <h3 className={`${
                                appointment.category === 'activity' ? 'text-gray-600 font-light' : 'text-gray-900 font-medium'
-                             }`}>{appointment.customerName}</h3>
+                             }`}>{appointment.category === 'activity' ? appointment.service : (appointment.customerName || '未知顧客')}</h3>
                              {appointment.category === 'booking' && (
                                <span className={getServiceTypeColor(appointment.serviceType, appointment.tags)}>
                                  {appointment.service}
                                </span>
                              )}
+                             {appointment.calculatedDuration && (
+                               <span className="text-sm text-gray-500">{appointment.calculatedDuration}分鐘</span>
+                             )}
                            </div>
-                           {appointment.category === 'booking' && (
+                           {appointment.category === 'booking' && !appointment.calculatedDuration && (
                              <div className="text-sm text-gray-600">{appointment.remainingTime}</div>
                            )}
                            {appointment.category === 'activity' && appointment.aiNotes && (
@@ -2586,21 +3138,24 @@ export default function CalendarPage() {
                            )}
                          </div>
                       </div>
-                      
-                      {/* 倒數計時：只有 isActive 時顯示 */}
+
+                      {/* 底部區域：倒數計時和進度條 */}
                       {isActive && (
-                        <div className="mt-4 flex justify-end">
-                          {renderCountdown()}
-                        </div>
-                      )}
-                      
-                      {/* 內置進度條：只有 isActive 時顯示 */}
-                      {isActive && (
-                        <div className="mt-2 h-1 w-full bg-gray-200 rounded-full overflow-hidden">
-                          <div 
-                            className="h-full bg-red-500 transition-all duration-1000"
-                            style={{ width: `${((now - start) / (end - start)) * 100}%` }}
-                          />
+                        <div className="mt-4 pt-4 border-t border-gray-100">
+                          <div className="flex justify-between items-center mb-2">
+                            <div className="text-xs text-gray-400">
+                              {startDateTime.format('YYYY-MM-DD') !== endDateTime.format('YYYY-MM-DD') && dayjs(currentDate).format('YYYY-MM-DD') === startDateTime.format('YYYY-MM-DD')
+                                ? `預計 ${endDateTime.format('M月D日')} 週${['日', '一', '二', '三', '四', '五', '六'][endDateTime.day()]} ${endDateTime.format('HH:mmA')} 結束`
+                                : `預計 ${endDateTime.format('HH:mmA')} 結束`}
+                            </div>
+                            {renderCountdown()}
+                          </div>
+                          <div className="h-1.5 w-full bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-red-500 transition-all duration-1000"
+                              style={{ width: `${((nowDateTime.valueOf() - startDateTime.valueOf()) / (endDateTime.valueOf() - startDateTime.valueOf())) * 100}%` }}
+                            />
+                          </div>
                         </div>
                       )}
                     </div>
@@ -2632,8 +3187,13 @@ export default function CalendarPage() {
                       let suggestedTime = '09:00'; // 預設 9:00
                       
                       if (dayAppointments.length > 0) {
-                        const lastAppointment = dayAppointments.sort((a, b) => b.time.localeCompare(a.time))[0];
-                        const [hours, minutes] = lastAppointment.time.split(':').map(Number);
+                        const lastAppointment = dayAppointments.sort((a, b) => {
+                          const timeA = getTimeFromStart(a.start_time);
+                          const timeB = getTimeFromStart(b.start_time);
+                          return timeB.localeCompare(timeA);
+                        })[0];
+                        const timeStr = getTimeFromStart(lastAppointment.start_time);
+                        const [hours, minutes] = timeStr.split(':').map(Number);
                         const lastAppointmentTime = new Date(dateStr);
                         lastAppointmentTime.setHours(hours, minutes, 0, 0);
                         
@@ -2646,8 +3206,7 @@ export default function CalendarPage() {
                         suggestedTime = `${suggestedHours}:${suggestedMinutes}`;
                       }
                       
-                      setDialogDate(dateStr);
-                      setDialogTime(suggestedTime);
+                      updateDialogFormState({ date: dateStr, time: suggestedTime });
                       setTimeWarning({ type: 'none' });
                       setShowAddDialog(true);
                     }}
@@ -2660,22 +3219,14 @@ export default function CalendarPage() {
 
               {/* 下班倒數彩蛋 */}
               {!isPastDate && dayAppointments.length > 0 && (() => {
-                const firstAppointment = dayAppointments[0];
-                const [firstH, firstM] = firstAppointment.time.split(':').map(Number);
-                const firstStartInMin = firstH * 60 + firstM;
-                
-                const nowInMin = currentTime.getHours() * 60 + currentTime.getMinutes();
-                
-                // 只在第一個訂單開始後才顯示
-                if (nowInMin < firstStartInMin) return null;
-                
                 const lastAppointment = dayAppointments[dayAppointments.length - 1];
-                const [h, m] = lastAppointment.time.split(':').map(Number);
-                const startInMin = h * 60 + m;
-                const duration = parseRemainingTime(lastAppointment.remainingTime);
-                const endInMin = startInMin + duration;
                 
-                const totalRemainingMin = endInMin - nowInMin;
+                // 使用完整的日期時間來計算，支援跨日訂單
+                const nowDateTime = dayjs().tz('Asia/Taipei');
+                const endDateTime = dayjs(lastAppointment.end_time).tz('Asia/Taipei');
+                
+                // 計算剩餘分鐘數
+                const totalRemainingMin = endDateTime.diff(nowDateTime, 'minute');
                 
                 if (totalRemainingMin <= 0) return null;
 
@@ -2856,9 +3407,19 @@ export default function CalendarPage() {
           </div>
         </div>
 
+        {/* Loading Spinner */}
+        {isLoadingAppointments && (
+          <div className="flex items-center justify-center h-[calc(100vh-200px)]">
+            <div className="flex flex-col items-center gap-3">
+              <div className="w-8 h-8 border-4 border-gray-200 border-t-black rounded-full animate-spin" />
+              <p className="text-sm text-gray-500">載入中...</p>
+            </div>
+          </div>
+        )}
+
         {/* 根據視圖模式渲染不同內容 */}
-        {viewMode === "day" && renderDayView()}
-        {viewMode === "week" && renderWeekView()}
+        {!isLoadingAppointments && viewMode === "day" && <div key={appointments.length > 0 ? 'has-data' : 'no-data'} className="h-[calc(100vh-200px)] w-full">{renderDayView()}</div>}
+        {!isLoadingAppointments && viewMode === "week" && <div key={appointments.length > 0 ? 'has-data' : 'no-data'} className="h-[calc(100vh-200px)] w-full">{renderWeekView()}</div>}
         {viewMode === "month" && (
           <>
             <div className="bg-amber-50/50 rounded-lg p-3 text-center">
@@ -2903,8 +3464,22 @@ export default function CalendarPage() {
               {(() => {
                 const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
                 const todayApps = currentDayAppointments;
-                if (todayApps.length > 0) {
-                  const [firstHours, firstMinutes] = todayApps[0].time.split(':').map(Number);
+                
+                // 過濾掉續前日的訂單，只保留當日開始的訂單
+                const todayStartedApps = todayApps.filter(app => {
+                  if (!app.start_time || !app.end_time) return false;
+                  if (isCrossDayBooking(app)) {
+                    const dateString = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
+                    const startDate = new Date(app.start_time as string);
+                    const startDateString = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`;
+                    return dateString === startDateString;
+                  }
+                  return true;
+                });
+                
+                if (todayStartedApps.length > 0 && todayStartedApps[0].start_time) {
+                  const firstTimeStr = getTimeFromStart(todayStartedApps[0].start_time);
+                  const [firstHours, firstMinutes] = firstTimeStr.split(':').map(Number);
                   const firstAppointmentMinutes = firstHours * 60 + firstMinutes;
                   if (currentMinutes < firstAppointmentMinutes) {
                     const diffMinutes = firstAppointmentMinutes - currentMinutes;
@@ -2918,7 +3493,7 @@ export default function CalendarPage() {
                           現在是 {currentTime.toLocaleDateString('zh-TW', { month: 'numeric', day: 'numeric' })} ({currentTime.toLocaleDateString('zh-TW', { weekday: 'short' })}) {currentTimeStr}
                         </div>
                         <div className="text-gray-600 text-sm mt-1">
-                          您距離第一筆預約 ({todayApps[0].time}) 還有 {hoursWithDecimal.toFixed(1)} 小時。
+                          您距離第一筆預約 ({getTimeFromStart(todayStartedApps[0].start_time)}) 還有 {hoursWithDecimal.toFixed(1)} 小時。
                         </div>
                       </div>
                     );
@@ -2933,12 +3508,25 @@ export default function CalendarPage() {
                     // 如果預約已標記為完成，不顯示在小時間軸
                     if (app.isFinished) return false;
                     
-                    const [hours, minutes] = app.time.split(':').map(Number);
+                    // 如果是續前日的訂單（跨日訂單且當前日期是結束日期），不顯示在小時間軸
+                    if (isCrossDayBooking(app) && app.start_time) {
+                      const dateString = `${currentDate.getFullYear()}-${String(currentDate.getMonth() + 1).padStart(2, '0')}-${String(currentDate.getDate()).padStart(2, '0')}`;
+                      const startDate = new Date(app.start_time);
+                      const startDateString = `${startDate.getFullYear()}-${String(startDate.getMonth() + 1).padStart(2, '0')}-${String(startDate.getDate()).padStart(2, '0')}`;
+                      if (dateString !== startDateString) return false;
+                    }
+                    
+                    const timeStr = getTimeFromStart(app.start_time);
+                    const [hours, minutes] = timeStr.split(':').map(Number);
                     const appointmentMinutes = hours * 60 + minutes;
                     const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
                     return appointmentMinutes >= currentMinutes;
                   })
-                  .sort((a, b) => a.time.localeCompare(b.time))
+                  .sort((a, b) => {
+                    const timeA = getTimeFromStart(a.start_time);
+                    const timeB = getTimeFromStart(b.start_time);
+                    return timeA.localeCompare(timeB);
+                  })
                   .map((appointment, index, array) => {
                     const isNext = index === 0;
                     const currentDateStart = new Date(currentDate);
@@ -2957,15 +3545,16 @@ export default function CalendarPage() {
                               Next
                             </span>
                           )}
-                          <span className={`font-bold min-w-[50px] ${isNext ? 'text-gray-900' : 'text-gray-900'}`}>{formatTime(appointment.time)}</span>
-                          <span className={`flex-1 ${isNext ? 'text-gray-900 font-medium' : 'text-gray-700'}`}>{appointment.customerName}</span>
+                          <span className={`font-bold min-w-[50px] ${isNext ? 'text-gray-900' : 'text-gray-900'}`}>{formatTime(getTimeFromStart(appointment.start_time))}</span>
+                          <span className={`flex-1 ${isNext ? 'text-gray-900 font-medium' : 'text-gray-700'}`}>{appointment.category === 'activity' ? appointment.service : (appointment.customerName || '未知顧客')}</span>
                           <span className={`text-gray-500`}>{appointment.serviceAbbr}</span>
                         </div>
                       </div>
                     );
                   })}
                 {currentDayAppointments.filter((app) => {
-                  const [hours, minutes] = app.time.split(':').map(Number);
+                  const timeStr = getTimeFromStart(app.start_time);
+                  const [hours, minutes] = timeStr.split(':').map(Number);
                   const appointmentMinutes = hours * 60 + minutes;
                   const currentMinutes = currentTime.getHours() * 60 + currentTime.getMinutes();
                   return appointmentMinutes >= currentMinutes;
@@ -3003,12 +3592,12 @@ export default function CalendarPage() {
                   >
                     <div className="flex items-center gap-2">
                       <div className={`w-2 h-2 rounded-full ${getServiceTypeDotColor(app.serviceType)}`}></div>
-                      <span className="text-sm font-medium text-gray-900">{app.customerName}</span>
+                      <span className="text-sm font-medium text-gray-900">{app.customerName || '未知顧客'}</span>
                       <span className="text-xs text-gray-500">{app.serviceAbbr}</span>
-                      <span className="text-xs text-gray-400">{app.date} {app.time}</span>
+                      <span className="text-xs text-gray-400">{app.date} {getTimeFromStart(app.start_time)}</span>
                     </div>
                     <button
-                      onClick={() => restoreAppointment(app)}
+                      onClick={() => handleRestoreDeletedAppointment(app)}
                       className="text-xs text-green-600 hover:text-green-700 font-medium"
                     >
                       復原
@@ -3042,23 +3631,40 @@ export default function CalendarPage() {
               <div className="space-y-6">
                 {/* 客戶大頭貼區塊 */}
                 <div className="bg-white rounded-3xl p-6 shadow-sm">
-                  <div className="flex items-center gap-4 mb-6">
-                    <div className="w-16 h-16 bg-black text-white rounded-2xl flex items-center justify-center text-2xl font-bold">
-                      {selectedCustomer?.customer_name?.charAt(0) || selectedAppointment.customerName.charAt(0)}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-xl font-bold text-gray-900">{selectedCustomer?.customer_name || selectedAppointment.customerName}</h3>
-                        {selectedCustomer?.is_blacklisted && (
-                          <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-900 bg-red-100 rounded-full">
-                            <AlertCircle className="w-3.5 h-3.5" />
-                            黑名單 ({selectedCustomer.no_show_count || 0}次未到)
-                          </span>
-                        )}
+                  {isLoadingCustomer ? (
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-4">
+                        <div className="w-16 h-16 bg-gray-200 rounded-2xl animate-pulse" />
+                        <div className="flex-1 space-y-2">
+                          <div className="h-6 bg-gray-200 rounded animate-pulse w-3/4" />
+                          <div className="h-4 bg-gray-200 rounded animate-pulse w-1/2" />
+                        </div>
                       </div>
-                      <p className="text-sm text-gray-500 mt-1">{selectedAppointment.service}</p>
+                      <div className="grid grid-cols-3 gap-3">
+                        <div className="h-16 bg-gray-200 rounded-xl animate-pulse" />
+                        <div className="h-16 bg-gray-200 rounded-xl animate-pulse" />
+                        <div className="h-16 bg-gray-200 rounded-xl animate-pulse" />
+                      </div>
                     </div>
-                  </div>
+                  ) : (
+                    <>
+                      <div className="flex items-center gap-4 mb-6">
+                        <div className="w-16 h-16 bg-black text-white rounded-2xl flex items-center justify-center text-2xl font-bold">
+                          {selectedAppointment?.category === 'activity' ? '活' : (selectedCustomer?.customer_name?.charAt(0) || selectedAppointment.customerName?.charAt(0) || '客')}
+                        </div>
+                        <div className="flex-1">
+                          <div className="flex items-center gap-2">
+                            <h3 className="text-xl font-bold text-gray-900">{selectedAppointment?.category === 'activity' ? selectedAppointment.service : (selectedCustomer?.customer_name || selectedAppointment.customerName || '未知顧客')}</h3>
+                            {selectedCustomer?.is_blacklisted && (
+                              <span className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-red-900 bg-red-100 rounded-full">
+                                <AlertCircle className="w-3.5 h-3.5" />
+                                黑名單 ({selectedCustomer.no_show_count || 0}次未到)
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-sm text-gray-500 mt-1">{selectedAppointment.service}</p>
+                        </div>
+                      </div>
 
                   {/* CRM 統計資訊 */}
                   {selectedCustomer && (
@@ -3079,35 +3685,30 @@ export default function CalendarPage() {
                   )}
 
                   {/* 膠囊標籤 - 從 customers 表讀取 */}
-                  {(selectedCustomer?.tags || selectedAppointment.tags).length > 0 && (
+                  {(selectedCustomer?.tags || selectedAppointment.tags || []).length > 0 && (
                     <div className="flex flex-wrap gap-2 mb-6">
-                      {(selectedCustomer?.tags || selectedAppointment.tags).map((tag: string) => (
+                      {(selectedCustomer?.tags || selectedAppointment.tags || []).map((tag: string) => (
                         <span
                           key={tag}
                           className={`inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium rounded-full ${
-                            tag === 'VIP' 
-                              ? 'bg-amber-100 text-amber-800' 
+                            tag === 'VIP'
+                              ? 'bg-amber-100 text-amber-800'
                               : tag === '新客'
                               ? 'bg-blue-100 text-blue-800'
-                              : tag === '黑名單'
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-gray-100 text-gray-700'
+                              : 'bg-gray-100 text-gray-800'
                           }`}
                         >
-                          {tag === 'VIP' && <Crown className="w-3.5 h-3.5" />}
-                          {tag === '新客' && <User className="w-3.5 h-3.5" />}
-                          {tag === '黑名單' && <AlertCircle className="w-3.5 h-3.5" />}
                           {tag}
                         </span>
                       ))}
                     </div>
                   )}
 
-                  {/* 聯絡資訊區塊 */}
-                  <div className="space-y-4">
+                  {/* 聯絡方式 */}
+                  <div className="space-y-3">
                     <div className="flex items-center gap-3 p-3 bg-gray-50 rounded-xl">
                       <div className="w-10 h-10 bg-black rounded-xl flex items-center justify-center">
-                        <PhoneCall className="w-5 h-5 text-white" />
+                        <PhoneIcon className="w-5 h-5 text-white" />
                       </div>
                       <div className="flex-1">
                         <p className="text-xs text-gray-500 mb-0.5">電話</p>
@@ -3129,10 +3730,12 @@ export default function CalendarPage() {
                       </div>
                       <div className="flex-1">
                         <p className="text-xs text-gray-500 mb-0.5">預約時間</p>
-                        <p className="text-sm font-medium text-gray-900">{selectedAppointment.date} {formatTime(selectedAppointment.time)}</p>
+                        <p className="text-sm font-medium text-gray-900">{selectedAppointment.date} {formatTime(getTimeFromStart(selectedAppointment.start_time))}{selectedAppointment.calculatedDuration && ` (${selectedAppointment.calculatedDuration} 分鐘)`}</p>
                       </div>
                     </div>
                   </div>
+                </>
+                  )}
                 </div>
 
 
@@ -3150,7 +3753,7 @@ export default function CalendarPage() {
                 )}
 
                 {/* 歷史紀錄區塊 */}
-                {selectedAppointment.history.length > 0 && (
+                {(selectedAppointment.history || []).length > 0 && (
                   <div className="bg-white rounded-3xl p-6 shadow-sm">
                     <div className="flex items-center gap-2 mb-4">
                       <CreditCard className="w-5 h-5 text-gray-600" />
@@ -3187,7 +3790,7 @@ export default function CalendarPage() {
           resetDialogState();
         }
       }}>
-        <DialogContent className="bg-white h-auto max-h-[90vh] w-[95%] max-w-[550px] rounded-3xl shadow-2xl my-8 p-8 flex flex-col border-0">
+        <DialogContent className="bg-white h-auto max-h-[90vh] w-[95%] max-w-[550px] rounded-3xl shadow-2xl my-8 p-8 flex flex-col border-0 backdrop-blur-sm">
           <DialogHeader className="mb-6">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center">
@@ -3200,120 +3803,145 @@ export default function CalendarPage() {
           <div className="flex-1 overflow-y-auto my-4 px-1 hide-scrollbar custom-scrollbar">
             <div className="space-y-5 py-2">
             {/* 切換開關 */}
-            <CategoryToggle category={dialogCategory} onChange={setDialogCategory} />
+            <CategoryToggle category={dialogFormState.category} onChange={(cat) => updateDialogFormState({ category: cat })} />
             <div className="space-y-2">
-              <Label htmlFor="customerName" className="text-sm font-medium text-gray-700">{dialogCategory === 'booking' ? '客戶名稱' : '活動名稱'} <span className="text-red-600 font-bold">*</span></Label>
+              <Label htmlFor="customerName" className="text-sm font-medium text-gray-700">{formFieldsVisibility.customerLabel} <span className="text-red-600 font-bold">*</span></Label>
               <Input
                 id="customerName"
-                value={dialogCustomerName}
-                onChange={(e) => setDialogCustomerName(e.target.value)}
-                placeholder={dialogCategory === 'booking' ? '請輸入客戶名稱' : '請輸入活動名稱（如：教育訓練、領貨）'}
+                value={dialogFormState.customerName}
+                onChange={(e) => updateDialogFormState({ customerName: e.target.value })}
+                placeholder={formFieldsVisibility.customerPlaceholder}
                 className={`h-12 bg-gray-50 border-0 rounded-xl text-base focus:ring-2 focus:ring-black ${errorFields.has("customerName") ? "error-flash" : ""}`}
               />
             </div>
-            {dialogCategory === 'booking' && (
-              <div className="space-y-2">
-                <Label htmlFor="customerInfo" className="text-sm font-medium text-gray-700">顧客的基本資料（選填）</Label>
-                <Input
-                  ref={customerInfoRef}
-                  id="customerInfo"
-                  type="text"
-                  defaultValue={dialogCustomerInfo}
-                  onBlur={(e) => {
-                    const phone = e.target.value.split('/')[0]?.trim();
-                    checkCustomerBlacklist(phone);
-                  }}
-                  placeholder="電話號碼 / 電子信箱"
-                  className="h-12 bg-gray-50 border-0 rounded-xl text-base focus:ring-2 focus:ring-black"
-                />
-                {/* 黑名單警告 */}
-                {blacklistWarning.isBlacklisted && (
-                  <div className="flex items-center gap-2 p-4 bg-red-50 border border-red-200 rounded-xl">
-                    <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
-                    <div className="flex-1">
-                      <p className="text-sm font-medium text-red-900">⚠️ 此顧客已被列入黑名單</p>
-                      <p className="text-xs text-red-700">歷史原因：{blacklistWarning.reason || '客戶未到'}</p>
+            {formFieldsVisibility.showCustomerFields && (
+              <div className="space-y-4">
+                <div className="space-y-2">
+                  <Label htmlFor="phone" className="text-sm font-medium text-gray-700">
+                    聯絡電話 <span className="text-red-500">*</span>
+                  </Label>
+                  <Input
+                    ref={customerInfoRef}
+                    id="phone"
+                    type="text"
+                    value={dialogFormState.phone}
+                    onChange={(e) => {
+                      // 只允許輸入數字
+                      const value = e.target.value.replace(/[^\d]/g, '');
+                      updateDialogFormState({ phone: value });
+                      checkCustomerBlacklist(value);
+                    }}
+                    placeholder="請輸入電話號碼"
+                    className={`h-12 bg-gray-50 border-0 rounded-xl text-base focus:ring-2 focus:ring-black ${errorFields.has("phone") ? "error-flash" : ""}`}
+                  />
+                  {/* 黑名單警告 */}
+                  {blacklistWarning.isBlacklisted && (
+                    <div className="flex items-center gap-2 p-4 bg-red-50 border border-red-200 rounded-xl">
+                      <AlertCircle className="w-5 h-5 text-red-600 flex-shrink-0" />
+                      <div className="flex-1">
+                        <p className="text-sm font-medium text-red-900">⚠️ 此顧客已被列入黑名單</p>
+                        <p className="text-xs text-red-700">歷史原因：{blacklistWarning.reason || '客戶未到'}</p>
+                      </div>
                     </div>
-                  </div>
-                )}
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="email" className="text-sm font-medium text-gray-700">電子信箱（選填）</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={dialogFormState.email}
+                    onChange={(e) => updateDialogFormState({ email: e.target.value })}
+                    placeholder="請輸入電子信箱"
+                    className="h-12 bg-gray-50 border-0 rounded-xl text-base focus:ring-2 focus:ring-black"
+                  />
+                </div>
               </div>
             )}
-            {dialogCategory === 'booking' && (
+            {formFieldsVisibility.showCustomerFields && (
               <div className="space-y-2">
                 <Label htmlFor="tags" className="text-sm font-medium text-gray-700">顧客標籤（選填）</Label>
-                <TagList tags={dialogTags} onRemove={(index) => {
-                  const newTags = dialogTags.filter((_, i) => i !== index);
-                  setDialogTags(newTags);
+                <TagButtons tags={dialogFormState.tags} onToggle={(tag: string) => {
+                  updateDialogFormState({ 
+                    tags: dialogFormState.tags.includes(tag)
+                      ? dialogFormState.tags.filter(t => t !== tag)
+                      : [...dialogFormState.tags, tag]
+                  });
                 }} />
-                <TagButtons tags={dialogTags} onAdd={(tag) => {
-                  if (!dialogTags.includes(tag)) {
-                    setDialogTags([...dialogTags, tag]);
-                  }
-                }} />
-                <input
-                  type="text"
-                  placeholder="輸入自定義標籤後按 Enter"
-                  className="flex-1 min-w-[120px] px-4 py-3 bg-gray-50 border-0 rounded-xl text-sm focus:ring-2 focus:ring-black"
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      const customTag = e.currentTarget.value.trim();
-                      if (customTag && !dialogTags.includes(customTag)) {
-                        setDialogTags([...dialogTags, customTag]);
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="新增自定義標籤"
+                    className="flex-1 px-4 py-2 bg-white border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-black focus:border-transparent outline-none transition-all"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const customTag = e.currentTarget.value.trim();
+                        if (customTag && !dialogFormState.tags.includes(customTag)) {
+                          updateDialogFormState({ tags: [...dialogFormState.tags, customTag] });
+                          if (customTag === '黑名單') {
+                            setBlacklistWarning({ isBlacklisted: true, reason: '手動標記' });
+                          }
+                          e.currentTarget.value = '';
+                        }
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      const input = e.currentTarget.previousElementSibling as HTMLInputElement;
+                      const customTag = input.value.trim();
+                      if (customTag && !dialogFormState.tags.includes(customTag)) {
+                        updateDialogFormState({ tags: [...dialogFormState.tags, customTag] });
                         if (customTag === '黑名單') {
                           setBlacklistWarning({ isBlacklisted: true, reason: '手動標記' });
                         }
-                        e.currentTarget.value = '';
+                        input.value = '';
                       }
-                    }
-                  }}
-                />
+                    }}
+                    className="px-4 py-2 bg-[#1A1A1A] text-white rounded-lg text-sm font-medium hover:bg-black transition-colors"
+                  >
+                    +
+                  </button>
+                </div>
               </div>
             )}
-            {dialogCategory === 'booking' && (
-              <>
-                <div className="space-y-2">
-                  <Label htmlFor="serviceType" className="text-sm font-medium text-gray-700">服務項目</Label>
-                  <Select
-                    value={dialogServiceType}
-                    onValueChange={(value: 'nail' | 'eyelash' | 'hair' | 'other') => {
-                      const defaultDurations: { [key: string]: string } = {
-                        'nail': '90',
-                        'eyelash': '60',
-                        'hair': '45',
-                        'other': '60'
-                      };
-                      setDialogServiceType(value);
-                      setDialogDuration(defaultDurations[value] || '60');
-                    }}
-                  >
-                    <SelectTrigger className="h-12 bg-gray-50 border-0 rounded-xl focus:ring-2 focus:ring-black">
-                      <SelectValue placeholder="選擇服務項目" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="nail">美甲</SelectItem>
-                      <SelectItem value="eyelash">美睫</SelectItem>
-                      <SelectItem value="hair">理髮</SelectItem>
-                      <SelectItem value="other">其他</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="service" className="text-sm font-medium text-gray-700">服務名稱 <span className="text-red-600 font-bold">*</span></Label>
-                  <Input
-                    id="service"
-                    value={dialogService}
-                    onChange={(e) => setDialogService(e.target.value)}
-                    placeholder="請輸入服務名稱"
-                    className={`h-12 bg-gray-50 border-0 rounded-xl text-base focus:ring-2 focus:ring-black ${errorFields.has("service") ? "error-flash" : ""}`}
-                  />
-                </div>
-              </>
+            {formFieldsVisibility.showServiceField && (
+              <div className="space-y-2">
+                <Label htmlFor="service" className="text-sm font-medium text-gray-700">服務名稱 <span className="text-red-600 font-bold">*</span></Label>
+                <Select
+                  value={dialogFormState.service}
+                  onValueChange={(value) => {
+                    const selectedService = mockServices.find(s => s.name === value);
+                    if (selectedService) {
+                      updateDialogFormState({ 
+                        service: selectedService.name,
+                        duration: selectedService.duration.toString(),
+                        price: selectedService.price.toString(),
+                        serviceType: selectedService.type as 'nail' | 'eyelash' | 'hair' | 'other'
+                      });
+                    }
+                  }}
+                >
+                  <SelectTrigger className="h-12 bg-gray-50 border-0 rounded-xl focus:ring-2 focus:ring-black">
+                    <SelectValue placeholder="選擇服務項目" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {mockServices.map((service) => (
+                      <SelectItem key={service.id} value={service.name}>
+                        {service.name} ({service.duration}分鐘) - NT${service.price}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
             )}
             <div className="space-y-2">
-              <Label htmlFor="time" className="text-sm font-medium text-gray-700">{dialogCategory === 'booking' ? '開始時間' : '活動時間'} <span className="text-red-600 font-bold">*</span></Label>
+              <Label htmlFor="time" className="text-sm font-medium text-gray-700">{formFieldsVisibility.timeLabel} <span className="text-red-600 font-bold">*</span></Label>
               <TimePicker
-                value={dialogTime}
-                onChange={setDialogTime}
+                value={dialogFormState.time}
+                onChange={(time) => updateDialogFormState({ time })}
                 className={errorFields.has("time") ? "error-flash" : ""}
               />
               {/* 即時時間警告顯示 */}
@@ -3333,24 +3961,48 @@ export default function CalendarPage() {
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="duration" className="text-sm font-medium text-gray-700">{dialogCategory === 'booking' ? '預計花費時間（分鐘）' : '持續時間（分鐘）'} <span className="text-red-600 font-bold">*</span></Label>
+              <Label htmlFor="duration" className="text-sm font-medium text-gray-700">{formFieldsVisibility.durationLabel} <span className="text-red-600 font-bold">*</span></Label>
               <Input
                 id="duration"
                 type="number"
-                value={dialogDuration}
-                onChange={(e) => setDialogDuration(e.target.value)}
-                placeholder={dialogCategory === 'booking' ? '請輸入預計花費時間' : '請輸入持續時間'}
+                value={dialogFormState.duration}
+                onChange={(e) => {
+                  updateDialogFormState({ duration: e.target.value });
+                  // 當 duration 改變時，重新計算 end_time（如果有開始時間）
+                  if (dialogFormState.date && dialogFormState.time) {
+                    const newDuration = parseInt(e.target.value) || 0;
+                    const startDateTime = new Date(`${dialogFormState.date}T${dialogFormState.time}`);
+                    const timezoneOffset = startDateTime.getTimezoneOffset() * 60000;
+                    const endDateTime = new Date(startDateTime.getTime() + newDuration * 60000);
+                    const end_time = new Date(endDateTime.getTime() - timezoneOffset).toISOString();
+                    // 可以在這裡更新顯示的結束時間（如果需要顯示）
+                  }
+                }}
+                placeholder={formFieldsVisibility.durationPlaceholder}
                 className={`h-12 bg-gray-50 border-0 rounded-xl text-base focus:ring-2 focus:ring-black ${errorFields.has("duration") ? "error-flash" : ""}`}
               />
             </div>
-            {dialogCategory === 'activity' && (
+            {formFieldsVisibility.showPriceField && (
               <div className="space-y-2">
-                <Label htmlFor="customerInfo" className="text-sm font-medium text-gray-700">備註（選填）</Label>
+                <Label htmlFor="price" className="text-sm font-medium text-gray-700">價格（選填）</Label>
                 <Input
-                  id="customerInfo"
+                  id="price"
+                  type="number"
+                  value={dialogFormState.price}
+                  onChange={(e) => updateDialogFormState({ price: e.target.value })}
+                  placeholder="請輸入價格"
+                  className="h-12 bg-gray-50 border-0 rounded-xl text-base focus:ring-2 focus:ring-black"
+                />
+              </div>
+            )}
+            {formFieldsVisibility.showNotesField && (
+              <div className="space-y-2">
+                <Label htmlFor="notes" className="text-sm font-medium text-gray-700">備註（選填）</Label>
+                <Input
+                  id="notes"
                   type="text"
-                  value={dialogCustomerInfo}
-                  onChange={(e) => setDialogCustomerInfo(e.target.value)}
+                  value={dialogFormState.notes}
+                  onChange={(e) => updateDialogFormState({ notes: e.target.value })}
                   placeholder="請輸入備註"
                   className="h-12 bg-gray-50 border-0 rounded-xl text-base focus:ring-2 focus:ring-black"
                 />
@@ -3358,19 +4010,19 @@ export default function CalendarPage() {
             )}
             </div>
           </div>
-          <DialogFooter className="pt-6 bg-white mt-auto gap-3">
+          <DialogFooter className="pt-6 bg-white mt-auto gap-3 justify-center">
             <Button
               variant="ghost"
               onClick={() => setShowAddDialog(false)}
-              className="h-12 px-6 rounded-xl text-gray-900 hover:bg-gray-100 transition-all hover:scale-95"
+              className="flex-1 h-12 bg-gray-100 text-gray-900 rounded-xl hover:bg-gray-200 transition-colors font-medium text-base"
             >
               取消
             </Button>
             <Button
               onClick={handleAddAppointment}
-              className="h-12 px-8 rounded-xl bg-black text-white hover:bg-gray-800 transition-all hover:scale-95 font-semibold"
+              className="flex-1 h-12 rounded-xl bg-black text-white hover:bg-gray-800 transition-colors font-medium text-base"
             >
-              新增
+              確認新增
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3383,15 +4035,15 @@ export default function CalendarPage() {
           setEditAppointment(null);
         }
       }}>
-        <DialogContent className="bg-white h-auto max-h-[90vh] w-[95%] max-w-[550px] rounded-3xl shadow-2xl my-8 p-8 flex flex-col border-0">
+        <DialogContent className="bg-white h-auto max-h-[90vh] w-[95%] max-w-[550px] rounded-3xl shadow-2xl my-8 p-8 flex flex-col border-0 backdrop-blur-sm">
           <DialogHeader className="mb-6">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center">
                 <Edit className="w-6 h-6 text-white" />
               </div>
-              <DialogTitle className="text-2xl font-bold text-gray-900">編輯項目</DialogTitle>
+              <DialogTitle className="text-2xl font-bold text-gray-900">修改預約</DialogTitle>
             </div>
-            <DialogDescription className="sr-only">編輯預約或活動資訊</DialogDescription>
+            <DialogDescription className="sr-only">修改預約資訊</DialogDescription>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto my-4 px-1 hide-scrollbar custom-scrollbar">
             <div className="space-y-5 py-2">
@@ -3468,7 +4120,7 @@ export default function CalendarPage() {
               )}
             </div>
           </div>
-          <DialogFooter className="pt-6 bg-white mt-auto gap-3">
+          <DialogFooter className="pt-6 bg-white mt-auto gap-3 justify-center">
             <Button
               variant="ghost"
               onClick={() => {
@@ -3476,15 +4128,21 @@ export default function CalendarPage() {
                 setEditAppointment(null);
                 setTimeWarning({ type: 'none' });
               }}
-              className="h-12 px-6 rounded-xl text-gray-900 hover:bg-gray-100 transition-all hover:scale-95"
+              className="flex-1 h-12 bg-gray-100 text-gray-900 rounded-xl hover:bg-gray-200 transition-colors font-medium text-base"
             >
               取消
             </Button>
             <Button
               onClick={handleEditAppointment}
-              className="h-12 px-8 rounded-xl bg-black text-white hover:bg-gray-800 transition-all hover:scale-95 font-semibold"
+              className="flex-1 h-12 rounded-xl bg-black text-white hover:bg-gray-800 transition-colors font-medium text-base"
             >
               修改
+            </Button>
+            <Button
+              onClick={handleDeleteAppointment}
+              className="flex-1 h-12 rounded-xl bg-red-600 text-white hover:bg-red-700 transition-colors font-medium text-base"
+            >
+              刪除
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -3492,7 +4150,7 @@ export default function CalendarPage() {
 
       {/* 刪除確認對話框 */}
       <Dialog open={showDeleteConfirmDialog} onOpenChange={setShowDeleteConfirmDialog}>
-        <DialogContent className="bg-white border border-gray-100 h-auto max-h-[90vh] w-[95%] max-w-[500px] rounded-[24px] shadow-2xl my-8 p-6 flex flex-col">
+        <DialogContent className="bg-white border border-gray-100 h-auto max-h-[90vh] w-[95%] max-w-[500px] rounded-[24px] shadow-2xl my-8 p-6 flex flex-col backdrop-blur-sm">
           <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-4" />
           <DialogHeader>
             <DialogTitle className="text-xl font-bold text-gray-900">確認刪除</DialogTitle>
@@ -3503,17 +4161,17 @@ export default function CalendarPage() {
             <p className="text-gray-700">請問你確定要刪除此預約嗎？</p>
             <p className="text-sm text-gray-500 mt-2">刪除後可以從復原記錄中恢復。</p>
           </div>
-          <DialogFooter className="pt-4 bg-white mt-auto">
+          <DialogFooter className="pt-4 bg-white mt-auto gap-3 justify-center">
             <Button
               variant="ghost"
               onClick={() => setShowDeleteConfirmDialog(false)}
-              className="text-gray-900 hover:bg-gray-100"
+              className="flex-1 h-12 bg-gray-100 text-gray-900 rounded-xl hover:bg-gray-200 transition-colors font-medium text-base"
             >
               取消
             </Button>
             <Button
               onClick={confirmDeleteAppointment}
-              className="bg-red-600 text-white hover:bg-red-700"
+              className="flex-1 h-12 rounded-xl bg-red-600 text-white hover:bg-red-700 transition-colors font-medium text-base"
             >
               確定刪除
             </Button>
@@ -3522,33 +4180,9 @@ export default function CalendarPage() {
         </DialogContent>
       </Dialog>
 
-      {/* 錯誤對話框 */}
-      <Dialog open={showErrorDialog} onOpenChange={setShowErrorDialog}>
-        <DialogContent className="bg-white border border-gray-100 h-auto max-h-[90vh] w-[95%] max-w-[500px] rounded-[24px] shadow-2xl my-8 p-6 flex flex-col">
-          <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-4" />
-          <DialogHeader>
-            <DialogTitle className="text-xl font-bold text-gray-900">{errorMessage.title}</DialogTitle>
-            <DialogDescription className="sr-only">{errorMessage.description}</DialogDescription>
-          </DialogHeader>
-          <div className="flex-1 overflow-y-auto my-4 px-1 hide-scrollbar custom-scrollbar">
-            <div className="py-4">
-            <p className="text-gray-700">{errorMessage.description}</p>
-          </div>
-          </div>
-          <DialogFooter className="pt-4 bg-white mt-auto">
-            <Button
-              onClick={() => setShowErrorDialog(false)}
-              className="bg-gray-900 text-white hover:bg-gray-800"
-            >
-              我知道了
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
       {/* 時間警告對話框 */}
       <Dialog open={showTimeWarningDialog} onOpenChange={setShowTimeWarningDialog}>
-        <DialogContent className="bg-white border border-gray-100 h-auto max-h-[90vh] w-[95%] max-w-[500px] rounded-[24px] shadow-2xl my-8 p-6 flex flex-col">
+        <DialogContent className="bg-white border border-gray-100 h-auto max-h-[90vh] w-[95%] max-w-[500px] rounded-[24px] shadow-2xl my-8 p-6 flex flex-col backdrop-blur-sm">
           <div className="w-12 h-1.5 bg-gray-200 rounded-full mx-auto mb-4" />
           <DialogHeader>
             <DialogTitle className="text-xl font-bold text-gray-900">
@@ -3564,7 +4198,7 @@ export default function CalendarPage() {
               </p>
             </div>
           </div>
-          <DialogFooter className="pt-4 bg-white mt-auto">
+          <DialogFooter className="pt-4 bg-white mt-auto gap-3 justify-center">
             <Button
               variant="ghost"
               onClick={() => {
@@ -3572,7 +4206,7 @@ export default function CalendarPage() {
                 setTimeWarning({ type: 'none' });
                 setPendingAppointment(null);
               }}
-              className="text-gray-900 hover:bg-gray-100"
+              className="flex-1 h-12 bg-gray-100 text-gray-900 rounded-xl hover:bg-gray-200 transition-colors font-medium text-base"
             >
               取消
             </Button>
@@ -3586,13 +4220,16 @@ export default function CalendarPage() {
                       const updatedAppointments = [...appointments];
                       updatedAppointments[index] = pendingAppointment;
                       const sortedAppointments = updatedAppointments.sort((a, b) => {
+                        if (!a.date || !b.date) return 0;
                         if (a.date !== b.date) {
                           return a.date.localeCompare(b.date);
                         }
-                        return a.time.localeCompare(b.time);
+                        const timeA = getTimeFromStart(a.start_time);
+                        const timeB = getTimeFromStart(b.start_time);
+                        return timeA.localeCompare(timeB);
                       });
                       setAppointments(sortedAppointments);
-                      saveBookingToSupabase(supabase, pendingAppointment);
+                      updateBookingToSupabase(supabase, pendingAppointment);
                     }
                     setShowEditDialog(false);
                     setEditAppointment(null);
@@ -3602,7 +4239,9 @@ export default function CalendarPage() {
                       if (a.date !== b.date) {
                         return a.date.localeCompare(b.date);
                       }
-                      return a.time.localeCompare(b.time);
+                      const timeA = getTimeFromStart(a.start_time);
+                      const timeB = getTimeFromStart(b.start_time);
+                      return timeA.localeCompare(timeB);
                     });
                     setAppointments(sortedAppointments);
                     saveBookingToSupabase(supabase, pendingAppointment);
@@ -3625,7 +4264,7 @@ export default function CalendarPage() {
                   tags: []
                 });
               }}
-              className="bg-red-600 text-white hover:bg-red-700"
+              className="flex-1 h-12 rounded-xl bg-black text-white hover:bg-gray-800 transition-colors font-medium text-base"
             >
               確定{editAppointment ? '修改' : '新增'}
             </Button>
@@ -3635,13 +4274,14 @@ export default function CalendarPage() {
 
       {/* 快速操作確認對話框 */}
       <Dialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
-        <DialogContent className="bg-white h-auto max-h-[90vh] w-[95%] max-w-[550px] rounded-3xl shadow-2xl my-8 p-8 flex flex-col border-0">
+        <DialogContent className="bg-white h-auto max-h-[90vh] w-[95%] max-w-[550px] rounded-3xl shadow-2xl my-8 p-8 flex flex-col border-0 backdrop-blur-sm">
           <DialogHeader className="mb-6">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center">
                 {confirmAction === 'end_early' && <Clock className="w-6 h-6 text-white" />}
                 {confirmAction === 'no_show' && <UserX className="w-6 h-6 text-white" />}
                 {confirmAction === 'extend' && <PlusCircle className="w-6 h-6 text-white" />}
+                {confirmAction === 'cancel' && <X className="w-6 h-6 text-white" />}
               </div>
               <DialogTitle className="text-2xl font-bold text-gray-900">
                 {confirmAction === 'end_early' && '確認提早結束'}
@@ -3650,12 +4290,14 @@ export default function CalendarPage() {
                   const appointment = appointments.find(app => app.id === confirmAppointmentId);
                   return appointment?.category === 'activity' ? '確認延長活動時間' : '確認延長服務時間';
                 })()}
+                {confirmAction === 'cancel' && '確認取消預約'}
               </DialogTitle>
             </div>
             <DialogDescription className="sr-only">
               {confirmAction === 'end_early' && '確認要提早結束此預約'}
               {confirmAction === 'no_show' && '確認客戶未到，將標記為黑名單'}
               {confirmAction === 'extend' && '確認要延長服務時間'}
+              {confirmAction === 'cancel' && '確認要取消此預約'}
             </DialogDescription>
           </DialogHeader>
           <div className="flex-1 overflow-y-auto my-4 px-1 hide-scrollbar custom-scrollbar">
@@ -3670,6 +4312,12 @@ export default function CalendarPage() {
               <div>
                 <p className="text-gray-700 text-base">確定標記為客戶未到嗎？</p>
                 <p className="text-sm text-gray-500 mt-3 leading-relaxed">此操作將結束預約，並將客戶資訊列入黑名單，未來該客戶預約時系統將自動提醒。</p>
+              </div>
+            )}
+            {confirmAction === 'cancel' && (
+              <div>
+                <p className="text-gray-700 text-base">確定要取消此預約嗎？</p>
+                <p className="text-sm text-gray-500 mt-3 leading-relaxed">此操作將刪除此預約，並釋放該時段。此動作無法復原。</p>
               </div>
             )}
             {confirmAction === 'extend' && (
@@ -3694,14 +4342,17 @@ export default function CalendarPage() {
                   
                   const currentDuration = parseInt(appointment.remainingTime) || 0;
                   const newDuration = currentDuration + extendMinutes;
-                  const [h, m] = appointment.time.split(':').map(Number);
+                  const timeStr = getTimeFromStart(appointment.start_time);
+                  const [h, m] = timeStr.split(':').map(Number);
                   const startInMin = h * 60 + m;
                   const newEndInMin = startInMin + newDuration;
                   
                   const dayAppointments = appointments.filter(app => app.date === appointment.date);
                   const sortedAppointments = dayAppointments.sort((a, b) => {
-                    const [ah, am] = a.time.split(':').map(Number);
-                    const [bh, bm] = b.time.split(':').map(Number);
+                    const timeStrA = getTimeFromStart(a.start_time);
+                    const timeStrB = getTimeFromStart(b.start_time);
+                    const [ah, am] = timeStrA.split(':').map(Number);
+                    const [bh, bm] = timeStrB.split(':').map(Number);
                     return (ah * 60 + am) - (bh * 60 + bm);
                   });
                   
@@ -3709,7 +4360,8 @@ export default function CalendarPage() {
                   const nextAppointment = sortedAppointments[currentIdx + 1];
                   
                   if (nextAppointment) {
-                    const [nextH, nextM] = nextAppointment.time.split(':').map(Number);
+                    const nextTimeStr = getTimeFromStart(nextAppointment.start_time);
+                    const [nextH, nextM] = nextTimeStr.split(':').map(Number);
                     const nextStartInMin = nextH * 60 + nextM;
                     
                     if (newEndInMin > nextStartInMin) {
@@ -3729,11 +4381,11 @@ export default function CalendarPage() {
             )}
           </div>
           </div>
-          <DialogFooter className="pt-6 bg-white mt-auto gap-3">
+          <DialogFooter className="pt-6 bg-white mt-auto gap-3 justify-center">
             <Button
               variant="ghost"
               onClick={() => setShowConfirmDialog(false)}
-              className="h-12 px-6 rounded-xl text-gray-900 hover:bg-gray-100 transition-all hover:scale-95"
+              className="flex-1 h-12 bg-gray-100 text-gray-900 rounded-xl hover:bg-gray-200 transition-colors font-medium text-base"
             >
               取消
             </Button>
@@ -3745,10 +4397,12 @@ export default function CalendarPage() {
                   handleNoShow(confirmAppointmentId);
                 } else if (confirmAction === 'extend') {
                   handleExtendService();
+                } else if (confirmAction === 'cancel') {
+                  deleteBookingFromSupabase(supabase, confirmAppointmentId!);
                 }
                 setShowConfirmDialog(false);
               }}
-              className="h-12 px-8 rounded-xl bg-black text-white hover:bg-gray-800 transition-all hover:scale-95 font-semibold"
+              className="flex-1 h-12 rounded-xl bg-black text-white hover:bg-gray-800 transition-colors font-medium text-base"
             >
               確定更改
             </Button>
@@ -3758,7 +4412,7 @@ export default function CalendarPage() {
 
       {/* 延長服務時間彈窗 */}
       <Dialog open={showExtendModal} onOpenChange={setShowExtendModal}>
-        <DialogContent className="bg-white h-auto max-h-[90vh] w-[95%] max-w-[550px] rounded-3xl shadow-2xl my-8 p-8 flex flex-col border-0">
+        <DialogContent className="bg-white h-auto max-h-[90vh] w-[95%] max-w-[550px] rounded-3xl shadow-2xl my-8 p-8 flex flex-col border-0 backdrop-blur-sm">
           <DialogHeader className="mb-6">
             <div className="flex items-center gap-3">
               <div className="w-12 h-12 bg-black rounded-2xl flex items-center justify-center">
@@ -3814,11 +4468,11 @@ export default function CalendarPage() {
             </div>
           </div>
           </div>
-          <DialogFooter className="pt-6 bg-white mt-auto gap-3">
+          <DialogFooter className="pt-6 bg-white mt-auto gap-3 justify-center">
             <Button
               variant="ghost"
               onClick={() => setShowExtendModal(false)}
-              className="h-12 px-6 rounded-xl text-gray-900 hover:bg-gray-100 transition-all hover:scale-95"
+              className="flex-1 h-12 bg-gray-100 text-gray-900 rounded-xl hover:bg-gray-200 transition-colors font-medium text-base"
             >
               取消
             </Button>
@@ -3829,7 +4483,7 @@ export default function CalendarPage() {
                 setShowConfirmDialog(true);
                 setShowExtendModal(false);
               }}
-              className="h-12 px-8 rounded-xl bg-black text-white hover:bg-gray-800 transition-all hover:scale-95 font-semibold"
+              className="flex-1 h-12 rounded-xl bg-black text-white hover:bg-gray-800 transition-colors font-medium text-base"
             >
               確定
             </Button>
@@ -3839,6 +4493,29 @@ export default function CalendarPage() {
 
       {/* Hover 詳細資訊卡 */}
       {renderHoverTooltip()}
+
+      {/* 錯誤對話框 */}
+      <Dialog open={showErrorDialog} onOpenChange={setShowErrorDialog}>
+        <DialogContent className="bg-white border border-gray-100 h-auto max-h-[90vh] w-[95%] max-w-[500px] rounded-[24px] shadow-2xl my-8 p-6 flex flex-col backdrop-blur-sm z-[9999]">
+          <DialogHeader className="sr-only">
+            <DialogTitle>{errorMessage.title}</DialogTitle>
+            <DialogDescription>{errorMessage.description}</DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-10 h-10 bg-red-100 rounded-full flex items-center justify-center">
+              <AlertCircle className="w-5 h-5 text-red-600" />
+            </div>
+            <h3 className="text-lg font-bold text-gray-900">{errorMessage.title}</h3>
+          </div>
+          <p className="text-sm text-gray-600 mb-6">{errorMessage.description}</p>
+          <Button
+            onClick={() => setShowErrorDialog(false)}
+            className="w-full h-10 bg-black text-white rounded-xl hover:bg-gray-800 transition-colors font-medium"
+          >
+            我知道了
+          </Button>
+        </DialogContent>
+      </Dialog>
 
     </div>
   );
