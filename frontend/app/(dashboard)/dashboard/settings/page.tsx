@@ -2,11 +2,11 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import { Key, Save, Copy, Check, Bot, Plus, X, Store, MapPin, Phone, Building2, Package, FileText, User, Database, Eye, EyeOff, Pen, Calendar, ExternalLink, MoreHorizontal, Headphones, BookOpen, Bell, Play } from "lucide-react";
+import { Key, Save, Copy, Check, Bot, Plus, X, Store, MapPin, Phone, Building2, Package, FileText, User, Database, Eye, EyeOff, Pen, Calendar, CalendarClock, ExternalLink, MoreHorizontal, Headphones, BookOpen, Bell, Play } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 
 type MainTabType = 'account' | 'basic' | 'third_party' | 'ai' | 'other';
-type SubTabType = 'line' | 'ai_agent' | 'store' | 'services' | 'faq' | 'staff' | 'appointment' | 'notification' | 'support' | 'manual';
+type SubTabType = 'line' | 'ai_agent' | 'store' | 'services' | 'faq' | 'staff' | 'appointment' | 'booking_settings' | 'notification' | 'support' | 'manual';
 
 export default function SettingsPage() {
   const searchParams = useSearchParams();
@@ -117,6 +117,19 @@ export default function SettingsPage() {
   const [showAddServiceForm, setShowAddServiceForm] = useState(false);
   const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<string>("");
   const [serviceItems, setServiceItems] = useState<Array<{ id: string; name: string; description: string; price: number; duration: number; category: string }>>([]);
+
+  // Business Hours Settings
+  const [businessHours, setBusinessHours] = useState<Array<{ day: string; isClosed: boolean; timeSlots: Array<{ id: string; startTime: string; endTime: string }> }>>([
+    { day: '週一', isClosed: false, timeSlots: [{ id: '1', startTime: '09:00', endTime: '18:00' }] },
+    { day: '週二', isClosed: false, timeSlots: [{ id: '1', startTime: '09:00', endTime: '18:00' }] },
+    { day: '週三', isClosed: false, timeSlots: [{ id: '1', startTime: '09:00', endTime: '18:00' }] },
+    { day: '週四', isClosed: false, timeSlots: [{ id: '1', startTime: '09:00', endTime: '18:00' }] },
+    { day: '週五', isClosed: false, timeSlots: [{ id: '1', startTime: '09:00', endTime: '18:00' }] },
+    { day: '週六', isClosed: true, timeSlots: [] },
+    { day: '週日', isClosed: true, timeSlots: [] },
+  ]);
+  const [businessHoursSaving, setBusinessHoursSaving] = useState(false);
+  const [businessHoursSaveSuccess, setBusinessHoursSaveSuccess] = useState(false);
   const [serviceSaving, setServiceSaving] = useState(false);
   const [serviceSaveSuccess, setServiceSaveSuccess] = useState(false);
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
@@ -157,6 +170,7 @@ export default function SettingsPage() {
   // Refs for click outside detection
   const tabRefs = useRef<Record<MainTabType, HTMLElement | null>>({} as Record<MainTabType, HTMLElement | null>);
   const serviceDropdownRef = useRef<HTMLDivElement | null>(null);
+  const categoryEditRef = useRef<HTMLDivElement | null>(null);
 
   // Close service dropdown when clicking outside
   useEffect(() => {
@@ -169,6 +183,20 @@ export default function SettingsPage() {
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
+
+  // Cancel category edit when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (categoryEditRef.current && !categoryEditRef.current.contains(event.target as Node) && editingCategoryId) {
+        cancelCategoryEdit();
+      }
+    };
+
+    if (editingCategoryId) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [editingCategoryId]);
 
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
@@ -196,31 +224,38 @@ export default function SettingsPage() {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
           setLineConfig(prev => ({ ...prev, userId: user.id }));
-          
-          // Fetch LINE credentials
-          const { data: userData, error } = await supabase
+
+          // Fetch settings from settings table
+          const { data: settingsData, error: settingsError } = await supabase
+            .from('settings')
+            .select('store_setting, employee_settings, service_settings, time_settings')
+            .eq('user_id', user.id)
+            .single();
+
+          // Fetch LINE credentials from users table
+          const { data: lineData, error: lineError } = await supabase
             .from('users')
-            .select('line_channel_access_token, line_channel_secret, ai_settings, store_name, store_address, store_google_map_link, store_phone, store_type, store_description, store_location_image, username, service_categories, staff_list, services')
+            .select('line_channel_access_token, line_channel_secret, ai_settings, username')
             .eq('id', user.id)
             .single();
 
-          if (userData) {
-            if (userData.username) {
-              setCurrentUsername(userData.username);
+          if (lineData) {
+            if (lineData.username) {
+              setCurrentUsername(lineData.username);
             }
             setLineConfig(prev => ({
               ...prev,
-              lineApiKey: userData.line_channel_access_token || '',
-              lineSecret: userData.line_channel_secret || ''
+              lineApiKey: lineData.line_channel_access_token || '',
+              lineSecret: lineData.line_channel_secret || ''
             }));
-            
-            if (userData.ai_settings) {
+
+            if (lineData.ai_settings) {
               setAiConfig({
-                tone: userData.ai_settings.tone || 'friendly',
-                customTone: userData.ai_settings.customTone || '',
-                sampleText: userData.ai_settings.sampleText || '',
-                rules: userData.ai_settings.rules || [""],
-                hardcodedRules: userData.ai_settings.hardcodedRules || {
+                tone: lineData.ai_settings.tone || 'friendly',
+                customTone: lineData.ai_settings.customTone || '',
+                sampleText: lineData.ai_settings.sampleText || '',
+                rules: lineData.ai_settings.rules || [""],
+                hardcodedRules: lineData.ai_settings.hardcodedRules || {
                   noHallucination: false,
                   driveBooking: false,
                   comfortEmotions: false,
@@ -228,28 +263,40 @@ export default function SettingsPage() {
                 }
               });
             }
-            
+          }
+
+          // Load service settings from settings table
+          if (settingsData && settingsData.service_settings) {
+            if (settingsData.service_settings.categories) {
+              setCategories(settingsData.service_settings.categories);
+            }
+            if (settingsData.service_settings.services) {
+              setServiceItems(settingsData.service_settings.services);
+            }
+          }
+
+          // Load employee settings from settings table
+          if (settingsData && settingsData.employee_settings) {
+            setStaffList(settingsData.employee_settings.map((staff: any) => ({ ...staff, collapsed: true })));
+          }
+
+          // Load store settings from settings table
+          if (settingsData && settingsData.store_setting) {
+            const storeSetting = settingsData.store_setting;
             setStoreConfig({
-              storeName: userData.store_name || '',
-              address: userData.store_address || '',
-              googleMapLink: userData.store_google_map_link || '',
-              phone: userData.store_phone || '',
-              storeType: userData.store_type || '',
-              storeDescription: userData.store_description || '',
-              storeLocationImage: userData.store_location_image || ''
+              storeName: storeSetting.store_name || '',
+              address: storeSetting.store_address || '',
+              googleMapLink: storeSetting.store_google_maps_url || '',
+              phone: storeSetting.store_phone || '',
+              storeType: storeSetting.store_type || '',
+              storeDescription: storeSetting.store_description || '',
+              storeLocationImage: storeSetting.store_location_image || ''
             });
+          }
 
-            if (userData.service_categories) {
-              setCategories(userData.service_categories);
-            }
-
-            if (userData.staff_list) {
-              setStaffList(userData.staff_list.map((staff: any) => ({ ...staff, collapsed: true })));
-            }
-
-            if (userData.services) {
-              setServiceItems(userData.services);
-            }
+          // Load time settings from settings table
+          if (settingsData && settingsData.time_settings) {
+            setBusinessHours(settingsData.time_settings);
           }
         }
       } catch (error) {
@@ -448,18 +495,38 @@ export default function SettingsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
 
-      const { error } = await supabase
-        .from('users')
-        .update({
-          store_name: storeConfig.storeName,
-          store_address: storeConfig.address,
-          store_google_map_link: storeConfig.googleMapLink,
-          store_phone: storeConfig.phone,
-          store_type: storeConfig.storeType,
-          store_description: storeConfig.storeDescription,
-          store_location_image: storeConfig.storeLocationImage
-        })
-        .eq('id', user.id);
+      const storeSetting = {
+        store_name: storeConfig.storeName,
+        store_type: storeConfig.storeType,
+        store_description: storeConfig.storeDescription,
+        store_phone: storeConfig.phone,
+        store_address: storeConfig.address,
+        store_google_maps_url: storeConfig.googleMapLink,
+        store_location_image: storeConfig.storeLocationImage
+      };
+
+      // Check if settings record exists for this user
+      const { data: existingSettings } = await supabase
+        .from('settings')
+        .select('user_id')
+        .eq('user_id', user.id)
+        .single();
+
+      let error;
+      if (existingSettings) {
+        // Update existing record
+        const result = await supabase
+          .from('settings')
+          .update({ store_setting: storeSetting })
+          .eq('user_id', user.id);
+        error = result.error;
+      } else {
+        // Insert new record
+        const result = await supabase
+          .from('settings')
+          .insert({ user_id: user.id, store_setting: storeSetting });
+        error = result.error;
+      }
 
       if (error) throw error;
 
@@ -502,12 +569,28 @@ export default function SettingsPage() {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
 
-        const { error } = await supabase
-          .from('users')
-          .update({
-            staff_list: updatedList
-          })
-          .eq('id', user.id);
+        // Check if settings record exists for this user
+        const { data: existingSettings } = await supabase
+          .from('settings')
+          .select('user_id')
+          .eq('user_id', user.id)
+          .single();
+
+        let error;
+        if (existingSettings) {
+          // Update existing record
+          const result = await supabase
+            .from('settings')
+            .update({ employee_settings: updatedList })
+            .eq('user_id', user.id);
+          error = result.error;
+        } else {
+          // Insert new record
+          const result = await supabase
+            .from('settings')
+            .insert({ user_id: user.id, employee_settings: updatedList });
+          error = result.error;
+        }
 
         if (error) console.error("Error deleting staff:", error);
       } catch (error) {
@@ -546,12 +629,28 @@ export default function SettingsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
 
-      const { error } = await supabase
-        .from('users')
-        .update({
-          staff_list: staffList
-        })
-        .eq('id', user.id);
+      // Check if settings record exists for this user
+      const { data: existingSettings } = await supabase
+        .from('settings')
+        .select('user_id')
+        .eq('user_id', user.id)
+        .single();
+
+      let error;
+      if (existingSettings) {
+        // Update existing record
+        const result = await supabase
+          .from('settings')
+          .update({ employee_settings: staffList })
+          .eq('user_id', user.id);
+        error = result.error;
+      } else {
+        // Insert new record
+        const result = await supabase
+          .from('settings')
+          .insert({ user_id: user.id, employee_settings: staffList });
+        error = result.error;
+      }
 
       if (error) throw error;
 
@@ -568,29 +667,102 @@ export default function SettingsPage() {
     }
   };
 
+  // Business Hours Handlers
+  const toggleDayClosed = (dayIndex: number) => {
+    setBusinessHours(businessHours.map((day, index) =>
+      index === dayIndex ? { ...day, isClosed: !day.isClosed, timeSlots: day.isClosed ? [{ id: Date.now().toString(), startTime: '09:00', endTime: '18:00' }] : [] } : day
+    ));
+  };
+
+  const addTimeSlot = (dayIndex: number) => {
+    setBusinessHours(businessHours.map((day, index) =>
+      index === dayIndex ? { ...day, timeSlots: [...day.timeSlots, { id: Date.now().toString(), startTime: '09:00', endTime: '18:00' }] } : day
+    ));
+  };
+
+  const removeTimeSlot = (dayIndex: number, slotId: string) => {
+    setBusinessHours(businessHours.map((day, index) =>
+      index === dayIndex ? {
+        ...day,
+        timeSlots: day.timeSlots.filter(slot => slot.id !== slotId),
+        isClosed: day.timeSlots.filter(slot => slot.id !== slotId).length === 0
+      } : day
+    ));
+  };
+
+  const updateTimeSlot = (dayIndex: number, slotId: string, field: 'startTime' | 'endTime', value: string) => {
+    setBusinessHours(businessHours.map((day, index) =>
+      index === dayIndex ? {
+        ...day,
+        timeSlots: day.timeSlots.map(slot =>
+          slot.id === slotId ? { ...slot, [field]: value } : slot
+        )
+      } : day
+    ));
+  };
+
+  const handleBusinessHoursSave = async () => {
+    setBusinessHoursSaving(true);
+    setBusinessHoursSaveSuccess(false);
+
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+
+      // Check if settings record exists for this user
+      const { data: existingSettings } = await supabase
+        .from('settings')
+        .select('user_id')
+        .eq('user_id', user.id)
+        .single();
+
+      let error;
+      if (existingSettings) {
+        // Update existing record
+        const result = await supabase
+          .from('settings')
+          .update({ time_settings: businessHours })
+          .eq('user_id', user.id);
+        error = result.error;
+      } else {
+        // Insert new record
+        const result = await supabase
+          .from('settings')
+          .insert({ user_id: user.id, time_settings: businessHours });
+        error = result.error;
+      }
+
+      if (error) throw error;
+
+      setBusinessHoursSaveSuccess(true);
+      setTimeout(() => setBusinessHoursSaveSuccess(false), 2000);
+    } catch (error: any) {
+      console.error("Error saving business hours:", error);
+      alert("儲存失敗：" + error.message);
+    } finally {
+      setBusinessHoursSaving(false);
+    }
+  };
+
+  const isBusinessHoursValid = () => {
+    return businessHours.every(day => day.isClosed || day.timeSlots.length > 0);
+  };
+
   const addCategory = async () => {
+    // Remove existing empty category if there is one
+    if (editingCategoryId) {
+      const existingCategory = categories.find(cat => cat.id === editingCategoryId);
+      if (existingCategory && !existingCategory.name.trim()) {
+        const newCategories = categories.filter(cat => cat.id !== editingCategoryId);
+        setCategories(newCategories);
+      }
+    }
+
     const newId = Date.now().toString();
     const newCategories = [...categories, { id: newId, name: "" }];
     setCategories(newCategories);
     setEditingCategoryId(newId);
     setEditingCategoryName("");
-
-    // Save to database
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
-
-      const { error } = await supabase
-        .from('users')
-        .update({
-          service_categories: newCategories
-        })
-        .eq('id', user.id);
-
-      if (error) console.error("Error adding category:", error);
-    } catch (error) {
-      console.error("Error adding category:", error);
-    }
   };
 
   const saveCategoryEdit = async (id: string) => {
@@ -616,12 +788,33 @@ export default function SettingsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { error } = await supabase
-        .from('users')
-        .update({
-          service_categories: newCategories
-        })
-        .eq('id', user.id);
+      // Check if settings record exists for this user
+      const { data: existingSettings } = await supabase
+        .from('settings')
+        .select('user_id, service_settings')
+        .eq('user_id', user.id)
+        .single();
+
+      const serviceSettings = {
+        categories: newCategories,
+        services: existingSettings?.service_settings?.services || []
+      };
+
+      let error;
+      if (existingSettings) {
+        // Update existing record
+        const result = await supabase
+          .from('settings')
+          .update({ service_settings: serviceSettings })
+          .eq('user_id', user.id);
+        error = result.error;
+      } else {
+        // Insert new record
+        const result = await supabase
+          .from('settings')
+          .insert({ user_id: user.id, service_settings: serviceSettings });
+        error = result.error;
+      }
 
       if (error) console.error("Error saving category edit:", error);
     } catch (error) {
@@ -642,12 +835,33 @@ export default function SettingsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { error } = await supabase
-        .from('users')
-        .update({
-          service_categories: newCategories
-        })
-        .eq('id', user.id);
+      // Check if settings record exists for this user
+      const { data: existingSettings } = await supabase
+        .from('settings')
+        .select('user_id, service_settings')
+        .eq('user_id', user.id)
+        .single();
+
+      const serviceSettings = {
+        categories: newCategories,
+        services: existingSettings?.service_settings?.services || []
+      };
+
+      let error;
+      if (existingSettings) {
+        // Update existing record
+        const result = await supabase
+          .from('settings')
+          .update({ service_settings: serviceSettings })
+          .eq('user_id', user.id);
+        error = result.error;
+      } else {
+        // Insert new record
+        const result = await supabase
+          .from('settings')
+          .insert({ user_id: user.id, service_settings: serviceSettings });
+        error = result.error;
+      }
 
       if (error) console.error("Error removing category:", error);
     } catch (error) {
@@ -656,11 +870,30 @@ export default function SettingsPage() {
   };
 
   const startEditCategory = (id: string, name: string) => {
+    // Remove existing empty category if there is one
+    if (editingCategoryId) {
+      const existingCategory = categories.find(cat => cat.id === editingCategoryId);
+      if (existingCategory && !existingCategory.name.trim()) {
+        const newCategories = categories.filter(cat => cat.id !== editingCategoryId);
+        setCategories(newCategories);
+      }
+    }
+
     setEditingCategoryId(id);
     setEditingCategoryName(name);
   };
 
   const cancelCategoryEdit = () => {
+    // If cancelling edit of a category with empty name, remove it
+    if (editingCategoryId) {
+      const category = categories.find(cat => cat.id === editingCategoryId);
+      if (category && !category.name.trim()) {
+        removeCategory(editingCategoryId);
+        setEditingCategoryId(null);
+        setEditingCategoryName("");
+        return;
+      }
+    }
     setEditingCategoryId(null);
     setEditingCategoryName("");
   };
@@ -688,12 +921,33 @@ export default function SettingsPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      const { error } = await supabase
-        .from('users')
-        .update({
-          service_categories: categories
-        })
-        .eq('id', user.id);
+      // Check if settings record exists for this user
+      const { data: existingSettings } = await supabase
+        .from('settings')
+        .select('user_id, service_settings')
+        .eq('user_id', user.id)
+        .single();
+
+      const serviceSettings = {
+        categories: categories,
+        services: existingSettings?.service_settings?.services || []
+      };
+
+      let error;
+      if (existingSettings) {
+        // Update existing record
+        const result = await supabase
+          .from('settings')
+          .update({ service_settings: serviceSettings })
+          .eq('user_id', user.id);
+        error = result.error;
+      } else {
+        // Insert new record
+        const result = await supabase
+          .from('settings')
+          .insert({ user_id: user.id, service_settings: serviceSettings });
+        error = result.error;
+      }
 
       if (error) console.error("Error saving reordered categories:", error);
     } catch (error) {
@@ -711,12 +965,33 @@ export default function SettingsPage() {
 
       console.log("Saving categories to database:", categories);
 
-      const { error } = await supabase
-        .from('users')
-        .update({
-          service_categories: categories
-        })
-        .eq('id', user.id);
+      // Check if settings record exists for this user
+      const { data: existingSettings } = await supabase
+        .from('settings')
+        .select('user_id, service_settings')
+        .eq('user_id', user.id)
+        .single();
+
+      const serviceSettings = {
+        categories: categories,
+        services: existingSettings?.service_settings?.services || []
+      };
+
+      let error;
+      if (existingSettings) {
+        // Update existing record
+        const result = await supabase
+          .from('settings')
+          .update({ service_settings: serviceSettings })
+          .eq('user_id', user.id);
+        error = result.error;
+      } else {
+        // Insert new record
+        const result = await supabase
+          .from('settings')
+          .insert({ user_id: user.id, service_settings: serviceSettings });
+        error = result.error;
+      }
 
       if (error) throw error;
 
@@ -775,12 +1050,33 @@ export default function SettingsPage() {
 
       console.log("Saving services to database:", updatedItems);
 
-      const { error } = await supabase
-        .from('users')
-        .update({
-          services: updatedItems
-        })
-        .eq('id', user.id);
+      // Check if settings record exists for this user
+      const { data: existingSettings } = await supabase
+        .from('settings')
+        .select('user_id, service_settings')
+        .eq('user_id', user.id)
+        .single();
+
+      const serviceSettings = {
+        categories: existingSettings?.service_settings?.categories || [],
+        services: updatedItems
+      };
+
+      let error;
+      if (existingSettings) {
+        // Update existing record
+        const result = await supabase
+          .from('settings')
+          .update({ service_settings: serviceSettings })
+          .eq('user_id', user.id);
+        error = result.error;
+      } else {
+        // Insert new record
+        const result = await supabase
+          .from('settings')
+          .insert({ user_id: user.id, service_settings: serviceSettings });
+        error = result.error;
+      }
 
       if (error) throw error;
 
@@ -1021,7 +1317,8 @@ export default function SettingsPage() {
       { id: 'store' as SubTabType, label: '店家設定', icon: Store },
       { id: 'staff' as SubTabType, label: '員工設定', icon: User },
       { id: 'services' as SubTabType, label: '服務設定', icon: Package },
-      { id: 'appointment' as SubTabType, label: '預約設定', icon: Calendar },
+      { id: 'appointment' as SubTabType, label: '營業設定', icon: Calendar },
+      { id: 'booking_settings' as SubTabType, label: '預約設定', icon: CalendarClock },
     ],
     third_party: [
       { id: 'line' as SubTabType, label: 'LINE設定', icon: Key },
@@ -1052,6 +1349,18 @@ export default function SettingsPage() {
     if (event) {
       event.stopPropagation();
     }
+
+    // Remove empty category if switching away from service settings
+    if (editingCategoryId) {
+      const existingCategory = categories.find(cat => cat.id === editingCategoryId);
+      if (existingCategory && !existingCategory.name.trim()) {
+        const newCategories = categories.filter(cat => cat.id !== editingCategoryId);
+        setCategories(newCategories);
+        setEditingCategoryId(null);
+        setEditingCategoryName("");
+      }
+    }
+
     setActiveMainTab(mainTabId);
     setActiveSubTab(tabId);
   };
@@ -1695,33 +2004,33 @@ export default function SettingsPage() {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-900 mb-2">電話 <span className="text-red-500">*</span></label>
+                <label className="block text-sm font-medium text-gray-900 mb-2">店家電話 <span className="text-red-500">*</span></label>
                 <input
                   type="tel"
                   value={storeConfig.phone}
                   onChange={(e) => setStoreConfig(prev => ({ ...prev, phone: e.target.value }))}
                   className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 outline-none focus:border-black focus:ring-1 focus:ring-black transition-all"
-                  placeholder="請輸入電話"
+                  placeholder="請輸入店家電話"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-900 mb-2">地址 <span className="text-red-500">*</span></label>
+                <label className="block text-sm font-medium text-gray-900 mb-2">店家地址 <span className="text-red-500">*</span></label>
                 <input
                   type="text"
                   value={storeConfig.address}
                   onChange={(e) => setStoreConfig(prev => ({ ...prev, address: e.target.value }))}
                   className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 outline-none focus:border-black focus:ring-1 focus:ring-black transition-all"
-                  placeholder="請輸入地址"
+                  placeholder="請輸入店家地址"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-900 mb-2">Google Map 連結</label>
+                <label className="block text-sm font-medium text-gray-900 mb-2">店家 Google Map 連結</label>
                 <input
                   type="url"
                   value={storeConfig.googleMapLink}
                   onChange={(e) => setStoreConfig(prev => ({ ...prev, googleMapLink: e.target.value }))}
                   className="w-full px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-900 outline-none focus:border-black focus:ring-1 focus:ring-black transition-all"
-                  placeholder="請輸入 Google Map 連結"
+                  placeholder="請輸入店家Google Map連結"
                 />
               </div>
               <div>
@@ -1998,7 +2307,7 @@ export default function SettingsPage() {
                   </div>
                   <button
                     onClick={() => setShowCategoryView(true)}
-                    className="flex items-center gap-2 px-4 py-2 bg-black text-white rounded-lg font-medium hover:bg-gray-800 transition-colors"
+                    className="flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-colors"
                   >
                     <Pen className="w-4 h-4" />
                     編輯分類
@@ -2199,7 +2508,16 @@ export default function SettingsPage() {
                     <h3 className="font-bold text-lg text-gray-900">分類管理</h3>
                   </div>
                   <button
-                    onClick={() => setShowCategoryView(false)}
+                    onClick={() => {
+                      // Remove empty category if editing one
+                      if (editingCategoryId) {
+                        const category = categories.find(cat => cat.id === editingCategoryId);
+                        if (category && !category.name.trim()) {
+                          removeCategory(editingCategoryId);
+                        }
+                      }
+                      setShowCategoryView(false);
+                    }}
                     className="flex items-center gap-2 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg font-medium hover:bg-gray-300 transition-colors"
                   >
                     返回
@@ -2230,29 +2548,32 @@ export default function SettingsPage() {
                           >
                             {editingCategoryId === category.id ? (
                               <>
-                                <input
-                                  type="text"
-                                  value={editingCategoryName}
-                                  onChange={(e) => {
-                                    setEditingCategoryName(e.target.value);
-                                    setCategoryError("");
-                                  }}
-                                  className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:outline-none text-gray-900 transition-colors"
-                                  placeholder="輸入分類名稱"
-                                  autoFocus
-                                />
-                                <button
-                                  onClick={() => saveCategoryEdit(category.id)}
-                                  className="p-2 text-green-600 hover:text-green-700 transition-colors"
-                                >
-                                  <Check className="w-5 h-5" />
-                                </button>
-                                <button
-                                  onClick={cancelCategoryEdit}
-                                  className="p-2 text-gray-600 hover:text-gray-700 transition-colors"
-                                >
-                                  <X className="w-5 h-5" />
-                                </button>
+                                <div ref={categoryEditRef} className="flex items-center gap-3 flex-1">
+                                  <input
+                                    type="text"
+                                    value={editingCategoryName}
+                                    onChange={(e) => {
+                                      setEditingCategoryName(e.target.value);
+                                      setCategoryError("");
+                                    }}
+                                    className="flex-1 px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:outline-none text-gray-900 transition-colors"
+                                    placeholder="輸入分類名稱"
+                                    autoFocus
+                                  />
+                                  <button
+                                    onClick={() => saveCategoryEdit(category.id)}
+                                    disabled={!editingCategoryName.trim()}
+                                    className="p-2 text-green-600 hover:text-green-700 transition-colors disabled:text-gray-400 disabled:cursor-not-allowed"
+                                  >
+                                    <Check className="w-5 h-5" />
+                                  </button>
+                                  <button
+                                    onClick={cancelCategoryEdit}
+                                    className="p-2 text-gray-600 hover:text-gray-700 transition-colors"
+                                  >
+                                    <X className="w-5 h-5" />
+                                  </button>
+                                </div>
                               </>
                             ) : (
                               <>
@@ -2283,17 +2604,6 @@ export default function SettingsPage() {
                       新增分類
                     </button>
                   </div>
-                  {categories.length > 0 && (
-                    <div className="flex justify-end mt-4">
-                      <button
-                        onClick={handleCategorySave}
-                        disabled={categorySaving}
-                        className="flex items-center gap-2 bg-black text-white px-6 py-2.5 rounded-lg font-bold hover:bg-gray-800 transition-all disabled:bg-gray-400"
-                      >
-                        {categorySaving ? '儲存中...' : categorySaveSuccess ? <><Check className="w-4 h-4" />已儲存</> : <><Save className="w-4 h-4" />儲存變更</>}
-                      </button>
-                    </div>
-                  )}
                 </div>
               </>
             )}
@@ -2301,6 +2611,81 @@ export default function SettingsPage() {
         )}
 
         {activeMainTab === 'basic' && activeSubTab === 'appointment' && (
+          <div className="space-y-6">
+            <div className="flex items-center mb-4">
+              <Calendar className="w-5 h-5 text-black mr-2" />
+              <h3 className="font-bold text-lg text-gray-900">營業設定</h3>
+            </div>
+            <div className="space-y-4">
+              {businessHours.map((day, dayIndex) => (
+                <div key={day.day} className="border border-gray-200 rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="flex items-center gap-3">
+                      <span className="font-medium text-gray-900 w-12">{day.day}</span>
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <div className="relative">
+                          <input
+                            type="checkbox"
+                            checked={day.isClosed}
+                            onChange={() => toggleDayClosed(dayIndex)}
+                            className="sr-only peer"
+                          />
+                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-black rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-black"></div>
+                        </div>
+                        <span className="text-sm text-gray-600">整日不營業</span>
+                      </label>
+                    </div>
+                  </div>
+                  {!day.isClosed && (
+                    <div className="space-y-2 ml-15">
+                      {day.timeSlots.map((slot, slotIndex) => (
+                        <div key={slot.id} className="flex items-center gap-2">
+                          <input
+                            type="time"
+                            value={slot.startTime}
+                            onChange={(e) => updateTimeSlot(dayIndex, slot.id, 'startTime', e.target.value)}
+                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:outline-none"
+                          />
+                          <span className="text-gray-500">至</span>
+                          <input
+                            type="time"
+                            value={slot.endTime}
+                            onChange={(e) => updateTimeSlot(dayIndex, slot.id, 'endTime', e.target.value)}
+                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:outline-none"
+                          />
+                          <button
+                            onClick={() => removeTimeSlot(dayIndex, slot.id)}
+                            className="text-red-500 hover:text-red-700 transition-colors"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                      <button
+                        onClick={() => addTimeSlot(dayIndex)}
+                        className="text-sm text-black hover:text-gray-700 transition-colors flex items-center gap-1"
+                      >
+                        <Plus className="w-4 h-4" />
+                        新增時段
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end pt-4 mt-4 border-t border-gray-200">
+              <button
+                onClick={handleBusinessHoursSave}
+                disabled={businessHoursSaving || !isBusinessHoursValid()}
+                className="flex items-center gap-2 bg-black text-white px-6 py-2.5 rounded-lg font-bold hover:bg-gray-800 transition-all disabled:bg-gray-400 disabled:cursor-not-allowed"
+              >
+                {businessHoursSaving ? '儲存中...' : businessHoursSaveSuccess ? <><Check className="w-4 h-4" />已儲存</> : <><Save className="w-4 h-4" />儲存</>}
+              </button>
+            </div>
+          </div>
+        )}
+
+        {activeMainTab === 'basic' && activeSubTab === 'booking_settings' && (
           <div className="space-y-6">
             <div className="flex items-center mb-4">
               <Calendar className="w-5 h-5 text-black mr-2" />
