@@ -202,7 +202,7 @@ export default function SettingsPage() {
             .from('users')
             .select('line_channel_access_token, line_channel_secret, ai_settings, store_name, store_address, store_google_map_link, store_phone, store_type, store_description, store_location_image, username, service_categories, staff_list, services')
             .eq('id', user.id)
-            .single();
+            .maybeSingle();
 
           if (userData) {
             if (userData.username) {

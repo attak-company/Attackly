@@ -165,19 +165,27 @@ async def send_login_code(request: SendLoginCodeRequest):
 async def verify_login_code(request: VerifyLoginCodeRequest):
     """驗證登入驗證碼"""
     try:
+        print(f"[DEBUG] Verifying login code for email: {request.email}, code: {request.code}")
         key = f"login_{request.email}"
+        print(f"[DEBUG] Looking for key: {key}")
+        print(f"[DEBUG] Current verification codes keys: {list(verification_codes.keys())}")
+
         if key not in verification_codes:
+            print(f"[DEBUG] Key not found in verification_codes")
             raise HTTPException(status_code=400, detail="請先發送登入驗證碼")
 
         stored_data = verification_codes[key]
+        print(f"[DEBUG] Stored data: {stored_data}")
 
         # 檢查是否過期
         if time.time() > stored_data["expires_at"]:
+            print(f"[DEBUG] Code expired")
             del verification_codes[key]
             raise HTTPException(status_code=400, detail="驗證碼已過期")
 
         # 驗證碼是否正確
         if request.code != stored_data["code"]:
+            print(f"[DEBUG] Code mismatch: expected {stored_data['code']}, got {request.code}")
             raise HTTPException(status_code=400, detail="驗證碼錯誤")
 
         # 驗證成功，刪除驗證碼
@@ -185,20 +193,34 @@ async def verify_login_code(request: VerifyLoginCodeRequest):
 
         # 使用 Supabase 生成 session
         # 首先獲取用戶
+        print(f"[DEBUG] Querying user with email: {request.email}")
         user_response = supabase.table('users').select('*').eq('email', request.email).execute()
+        print(f"[DEBUG] User response: {user_response.data if user_response.data else 'No data'}")
+
         if not user_response.data or len(user_response.data) == 0:
+            print(f"[DEBUG] User not found")
             raise HTTPException(status_code=400, detail="找不到該用戶")
 
         user = user_response.data[0]
+        print(f"[DEBUG] User found: {user}")
+
+        # 檢查用戶是否有 id 欄位
+        user_id = user.get('id')
+        if not user_id:
+            # 如果沒有 id，使用 email 作為標識符
+            user_id = user.get('email')
+            print(f"[DEBUG] User ID is None, using email as identifier: {user_id}")
 
         # 使用 Supabase auth 創建 session（這裡需要用戶的密碼，但我們沒有存儲密碼）
         # 由於我們使用的是自定義的驗證碼流程，我們需要另一種方式來設置 session
         # 暫時返回用戶信息，讓前端處理
-        return {"success": True, "verified": True, "user_id": user['id']}
+        return {"success": True, "verified": True, "user_id": user_id}
     except HTTPException:
         raise
     except Exception as e:
-        print(f"Error verifying login code: {e}")
+        print(f"[ERROR] Error verifying login code: {e}")
+        import traceback
+        traceback.print_exc()
         raise HTTPException(status_code=500, detail="驗證失敗")
 
 @router.post("/send-password-reset")

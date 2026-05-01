@@ -4,7 +4,7 @@ import { Bell, ChevronDown, User, LogOut, UserPlus, Power, Headphones, BookOpen 
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { createClient } from "@/lib/supabase";
+import { supabase } from "@/lib/bookingService";
 
 export function Header() {
   const [showNotifications, setShowNotifications] = useState(false);
@@ -14,7 +14,6 @@ export function Header() {
   const [aiEnabled, setAiEnabled] = useState(true);
   const [currentTime, setCurrentTime] = useState(new Date());
   const router = useRouter();
-  const supabase = createClient();
 
   useEffect(() => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
@@ -26,16 +25,9 @@ export function Header() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-          const { data: userData } = await supabase
-            .from('users')
-            .select('username, ai_enabled')
-            .eq('id', user.id)
-            .single();
-          
-          if (userData) {
-            setUsername(userData.username);
-            setAiEnabled(userData.ai_enabled !== false);
-          }
+          // 直接使用 auth 用戶數據，不查詢 users 表
+          setUsername(user.email?.split('@')[0] || "用戶");
+          setAiEnabled(true);
         }
       } catch (error) {
         console.error("Error fetching user data:", error);

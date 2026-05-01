@@ -21,11 +21,11 @@ export function TimePicker({ value, onChange, className }: TimePickerProps) {
   })
   const [selectedHour, setSelectedHour] = React.useState(() => {
     const [hours] = value.split(":").map(Number)
-    return hours % 12 || 12
+    return (hours % 12 || 12) || 12
   })
   const [selectedMinute, setSelectedMinute] = React.useState(() => {
     const [, minutes] = value.split(":").map(Number)
-    return minutes
+    return (minutes || 0)
   })
   const [manualInput, setManualInput] = React.useState("")
   const [isManualInputFocused, setIsManualInputFocused] = React.useState(false)
@@ -41,7 +41,8 @@ export function TimePicker({ value, onChange, className }: TimePickerProps) {
     } else if (newPeriod === "AM" && newHour === 12) {
       hour24 = 0
     }
-    const timeString = `${hour24.toString().padStart(2, "0")}:${newMinute.toString().padStart(2, "0")}`
+    const safeMinute = newMinute ?? 0
+    const timeString = `${hour24.toString().padStart(2, "0")}:${safeMinute.toString().padStart(2, "0")}`
     onChange(timeString)
   }
 

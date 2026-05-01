@@ -1,12 +1,23 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 from app.api import router as api_router
 from app.websocket.manager import ConnectionManager
 import os
+import time
 
 app = FastAPI(title="數位店長 API", version="0.1.0")
+
+# 添加請求日誌中間件
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.time()
+    print(f"[REQUEST] {request.method} {request.url.path}")
+    response = await call_next(request)
+    process_time = time.time() - start_time
+    print(f"[RESPONSE] {request.method} {request.url.path} - Status: {response.status_code} - Time: {process_time:.2f}s")
+    return response
 
 # CORS
 app.add_middleware(
