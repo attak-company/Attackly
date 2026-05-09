@@ -81,8 +81,8 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="zh-TW" className={cn("font-sans", geist.variable)}>
-      <body className={`${inter.className} min-h-screen bg-white text-gray-900`}>
+    <html lang="zh-TW" className={cn("font-sans", geist.variable)} suppressHydrationWarning>
+      <body className={`${inter.className} min-h-screen bg-white text-gray-900`} suppressHydrationWarning>
         {children}
       </body>
     </html>

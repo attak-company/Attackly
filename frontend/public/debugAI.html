@@ -1,0 +1,295 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI 預約調試工具</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            color: #333;
+        }
+        .input-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+            color: #555;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+        button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+        button:hover {
+            background: #0056b3;
+        }
+        .results {
+            margin-top: 30px;
+            padding: 20px;
+            background: #f8f9fa;
+            border-radius: 5px;
+            border-left: 4px solid #007bff;
+        }
+        .error {
+            color: #dc3545;
+            background: #f8d7da;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        .success {
+            color: #155724;
+            background: #d4edda;
+            padding: 15px;
+            border-radius: 5px;
+            margin-top: 20px;
+        }
+        pre {
+            background: #f1f1f1;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 AI 預約調試工具</h1>
+            <p>檢查 AI 預約是否正確寫入 V3 資料庫</p>
+        </div>
+
+        <div class="input-group">
+            <label for="supabaseUrl">Supabase URL:</label>
+            <input type="text" id="supabaseUrl" placeholder="https://your-project.supabase.co" value="">
+        </div>
+
+        <div class="input-group">
+            <label for="supabaseKey">Supabase Anon Key:</label>
+            <input type="text" id="supabaseKey" placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..." value="">
+        </div>
+
+        <button onclick="debugAIBookings()">🔍 開始調試 AI 預約</button>
+        <button onclick="clearResults()">🗑️ 清除結果</button>
+
+        <div id="results"></div>
+    </div>
+
+    <script>
+        let supabase = null;
+
+        function initializeSupabase() {
+            const url = document.getElementById('supabaseUrl').value;
+            const key = document.getElementById('supabaseKey').value;
+            
+            if (!url || !key) {
+                showError('請輸入 Supabase URL 和 Key');
+                return false;
+            }
+            
+            try {
+                supabase = createClient(url, key);
+                return true;
+            } catch (error) {
+                showError('Supabase 初始化失敗: ' + error.message);
+                return false;
+            }
+        }
+
+        async function debugAIBookings() {
+            const resultsDiv = document.getElementById('results');
+            resultsDiv.innerHTML = '<div class="results">🔄 正在調試 AI 預約...</div>';
+            
+            if (!initializeSupabase()) {
+                return;
+            }
+            
+            try {
+                // 1. 獲取當前用戶
+                const { data: { user }, error: authError } = await supabase.auth.getUser();
+                if (authError || !user) {
+                    showError('認證失敗: ' + (authError?.message || '未知錯誤'));
+                    return;
+                }
+                
+                showResult('✅ 當前用戶 ID: ' + user.id);
+                
+                // 2. 讀取 V3 資料
+                const { data, error } = await supabase
+                    .from('shop_bookings_v3')
+                    .select('all_bookings')
+                    .eq('user_id', user.id)
+                    .maybeSingle();
+                    
+                if (error) {
+                    showError('讀取 V3 資料失敗: ' + error.message);
+                    return;
+                }
+                
+                const allBookings = data?.all_bookings || [];
+                showResult('📊 總預約數量: ' + allBookings.length);
+                
+                // 3. 分析所有預約
+                const statusCount = {
+                    pending: 0,
+                    confirmed: 0,
+                    completed: 0,
+                    cancelled: 0,
+                    no_show: 0,
+                    in_progress: 0,
+                    waiting_list: 0,
+                    rescheduled: 0
+                };
+                
+                const sourceCount = {
+                    AI_Chatbot: 0,
+                    phone: 0,
+                    web: 0,
+                    admin: 0
+                };
+                
+                const categoryCount = {
+                    booking: 0,
+                    activity: 0
+                };
+                
+                allBookings.forEach((booking, index) => {
+                    const status = booking.status || 'unknown';
+                    const source = booking.admin_meta?.source || 'unknown';
+                    const category = booking.service_info?.category || 'unknown';
+                    
+                    // 狀態統計
+                    if (statusCount.hasOwnProperty(status)) {
+                        statusCount[status]++;
+                    }
+                    
+                    // 來源統計
+                    if (sourceCount.hasOwnProperty(source)) {
+                        sourceCount[source]++;
+                    }
+                    
+                    // 類別統計
+                    if (categoryCount.hasOwnProperty(category)) {
+                        categoryCount[category]++;
+                    }
+                    
+                    // 顯示前 5 筆預約的詳細資訊
+                    if (index < 5) {
+                        showResult(`  ${index + 1}. ${booking.customer_name} - ${status} - ${source} - ${category}`);
+                        showResult(`     服務: ${booking.service_info?.name}`);
+                        showResult(`     時間: ${booking.schedule?.start}`);
+                    }
+                });
+                
+                showResult('📈 狀態統計: ' + JSON.stringify(statusCount, null, 2));
+                showResult('🤖 來源統計: ' + JSON.stringify(sourceCount, null, 2));
+                showResult('📦 類別統計: ' + JSON.stringify(categoryCount, null, 2));
+                
+                // 4. 專門檢查 pending + booking 的預約
+                const pendingBookings = allBookings.filter(booking => {
+                    return booking.status === 'pending' && 
+                           booking.service_info?.category === 'booking';
+                });
+                
+                showResult('⏳ Pending + Booking 預約數量: ' + pendingBookings.length);
+                
+                if (pendingBookings.length === 0) {
+                    showResult('❌ 沒有找到 pending + booking 的預約！');
+                    showResult('💡 可能的原因:');
+                    showResult('   1. AI 預約沒有成功寫入');
+                    showResult('   2. AI 預約的 status 不是 pending');
+                    showResult('   3. AI 預約的 category 不是 booking');
+                    showResult('   4. 過濾邏輯有問題');
+                } else {
+                    showResult('✅ 找到 pending + booking 預約:');
+                    pendingBookings.forEach((booking, index) => {
+                        showResult(`   ${index + 1}. ${booking.customer_name} (${booking.id})`);
+                    });
+                }
+                
+                showSuccess('調試完成！請檢查上述結果。');
+                
+            } catch (error) {
+                showError('調試過程發生錯誤: ' + error.message);
+            }
+        }
+
+        function showResult(message) {
+            const resultsDiv = document.getElementById('results');
+            const pre = document.createElement('pre');
+            pre.textContent = message;
+            resultsDiv.appendChild(pre);
+        }
+
+        function showError(message) {
+            const resultsDiv = document.getElementById('results');
+            const errorDiv = document.createElement('div');
+            errorDiv.className = 'error';
+            errorDiv.textContent = message;
+            resultsDiv.appendChild(errorDiv);
+        }
+
+        function showSuccess(message) {
+            const resultsDiv = document.getElementById('results');
+            const successDiv = document.createElement('div');
+            successDiv.className = 'success';
+            successDiv.textContent = message;
+            resultsDiv.appendChild(successDiv);
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = '';
+        }
+
+        // 自動填充本地開發環境的配置（如果有的話）
+        window.addEventListener('load', function() {
+            // 嘗試從 localStorage 讀取配置
+            const savedUrl = localStorage.getItem('supabaseUrl');
+            const savedKey = localStorage.getItem('supabaseKey');
+            
+            if (savedUrl) document.getElementById('supabaseUrl').value = savedUrl;
+            if (savedKey) document.getElementById('supabaseKey').value = savedKey;
+        });
+
+        // 保存配置到 localStorage
+        document.getElementById('supabaseUrl').addEventListener('change', function() {
+            localStorage.setItem('supabaseUrl', this.value);
+        });
+
+        document.getElementById('supabaseKey').addEventListener('change', function() {
+            localStorage.setItem('supabaseKey', this.value);
+        });
+    </script>
+</body>
+</html>

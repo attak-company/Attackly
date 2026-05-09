@@ -1,11 +1,19 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { Plus, Check, X, Clock, Phone, MapPin, MessageCircle, AlertCircle, Bot, Search } from "lucide-react";
+import React, { useState, useEffect, useMemo, useRef } from 'react';
+import { ChevronDown, MapPin, Phone as PhoneIcon, Mail as MailIcon, Clock, Tag, X, User, Crown, Scissors, Eye, Palette, Calendar, Plus, AlertCircle, AlertTriangle, CalendarPlus, Check, PhoneCall, CreditCard, FileText, Edit, UserX, PlusCircle, Search, Bot, Phone, MessageCircle } from "lucide-react";
 import { TimePicker } from "@/components/ui/time-picker";
 import { useToast } from "@/hooks/use-toast";
 import { supabase } from "@/lib/bookingService";
 import { fetchBookingsByStatus, fetchHistoryBookings, updateBookingStatus, confirmBooking, createBooking, softDeleteBooking } from "@/lib/bookingService";
+import dayjs from 'dayjs';
+import utc from 'dayjs/plugin/utc';
+import timezone from 'dayjs/plugin/timezone';
+
+// 擴展 dayjs 插件
+dayjs.extend(utc);
+dayjs.extend(timezone);
+dayjs.tz.setDefault('Asia/Taipei');
 
 const customScrollbarStyles = `
   .custom-scrollbar::-webkit-scrollbar {
@@ -83,43 +91,61 @@ const customScrollbarStyles = `
   }
 `;
 
+// V3 服務資訊物件
+interface ServiceInfo {
+  name: string;
+  price: number;
+  category: "booking" | "activity";
+  service_type: "nail" | "hair" | "facial" | "massage" | "eyelash" | "other";
+}
+
+// V3 排程資訊物件
+interface Schedule {
+  start: string;
+  end: string;
+  date: string;
+  duration: string;
+}
+
+// V3 管理資訊物件
+interface AdminMeta {
+  tags: string[];
+  ai_notes: string;
+  source: "manual" | "web_dashboard" | "mobile_app" | "phone_call" | "walk_in" | "import" | "AI_Chatbot";
+  notes: string;
+}
+
+// V3 預約物件
 interface Booking {
   id: string;
   customer_name: string;
-  phone: string;
-  service: string;
-  time: string;
-  date: string;
-  status: "pending" | "confirmed" | "cancelled" | "completed" | "no_show";
-  source?: "phone" | "line" | "walkin" | "manual" | "AI_Chatbot" | "Hang_Ke";
-  note?: string;
-  ai_notes?: string;
-  hasConflict?: boolean;
-  duration?: number;
-  tags?: string[];
-  email?: string;
-  start_time?: string;
-  end_time?: string;
+  customer_phone: string;
+  customer_email: string;
+  service_info: ServiceInfo;
+  schedule: Schedule;
+  status: "pending" | "confirmed" | "in_progress" | "completed" | "cancelled" | "no_show" | "rescheduled" | "waiting_list";
+  admin_meta: AdminMeta;
 }
 
-// TODO: Replace with real API from settings table
-// Mock services data for service selection dropdown (synced with calendar page)
-const mockServices = [
-  { id: '1', name: '男士護理', duration: 45, price: 500, type: 'hair' },
-  { id: '2', name: '法式美甲', duration: 120, price: 1200, type: 'nail' },
-  { id: '3', name: '日式美甲', duration: 90, price: 1000, type: 'nail' },
-  { id: '4', name: '美睫嫁接', duration: 60, price: 800, type: 'eyelash' },
-  { id: '5', name: '洗剪吹', duration: 30, price: 300, type: 'hair' },
-  { id: '6', name: '染髮', duration: 150, price: 2000, type: 'hair' },
-  { id: '7', name: '燙髮', duration: 180, price: 2500, type: 'hair' },
-  { id: '8', name: '手足護理', duration: 45, price: 400, type: 'other' },
-];
-
-// 服務對應的預設時長（分鐘）- 從 mockServices 生成
-const serviceDurationMap: Record<string, number> = mockServices.reduce((acc, service) => {
-  acc[service.name] = service.duration;
-  return acc;
-}, {} as Record<string, number>);
+// V3 顧客物件
+interface Customer {
+  id: string;
+  name: string;
+  phone: string;
+  email: string;
+  stats: {
+    total_bookings: number;
+    total_spending: number;
+    no_show_count: number;
+    last_purchase_at: string;
+  };
+  status: {
+    is_blacklisted: boolean;
+    blacklist_reason: string | null;
+  };
+  tags: string[];
+  manual_notes: string;
+}
 
 // 常用標籤
 const commonTags = ["新客", "VIP", "特殊注意"];
@@ -134,6 +160,18 @@ export default function AppointmentsPage() {
   const [errorFields, setErrorFields] = useState<Set<string>>(new Set());
   const [currentPage, setCurrentPage] = useState(0);
   const pageSize = 20;
+
+  // 從設定讀取的服務資料
+  const [services, setServices] = useState<Array<{ id: string; name: string; description: string; price: number; duration: number; category: string }>>([]);
+  const [isLoadingSettings, setIsLoadingSettings] = useState(true);
+
+  // 服務對應的預設時長（分鐘）- 使用 useMemo 避免重複計算
+  const serviceDurationMap = useMemo(() => {
+    return services.reduce((acc, service) => {
+      acc[service.name] = service.duration;
+      return acc;
+    }, {} as Record<string, number>);
+  }, [services]);
 
   // 新增預約表單狀態
   const [newBooking, setNewBooking] = useState<{
@@ -162,6 +200,193 @@ export default function AppointmentsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [highlightedBookingId, setHighlightedBookingId] = useState<string | null>(null);
   const [allBookings, setAllBookings] = useState<Booking[]>([]);
+
+  // 通用倒數計時組件：穩定不跳動，適用於預約管理頁面
+  const UniversalCountdown = () => {
+    const [countdown, setCountdown] = useState<{ minutes: number; seconds: number; hours: number } | null>(null);
+    const [nextItemType, setNextItemType] = useState<'booking' | 'activity' | null>(null);
+    const [shouldShow, setShouldShow] = useState(false);
+    const lastUpdateTime = useRef<number>(0);
+    const animationFrameRef = useRef<number | undefined | null>(null);
+
+    useEffect(() => {
+      const updateCountdown = async () => {
+        try {
+          const { data: { user } } = await supabase.auth.getUser();
+          if (!user) return;
+
+          const now = dayjs().tz('Asia/Taipei');
+          const currentTime = now.valueOf();
+          
+          // 限制更新頻率，避免過度渲染
+          if (currentTime - lastUpdateTime.current < 900) {
+            return;
+          }
+          lastUpdateTime.current = currentTime;
+
+          // 獲取所有今天的預約和活動 - 從 V3 讀取
+          const today = dayjs().tz('Asia/Taipei').format('YYYY-MM-DD');
+          const { data: todayData } = await supabase
+            .from('shop_bookings_v3')
+            .select('all_bookings')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+          if (!todayData?.all_bookings || todayData.all_bookings.length === 0) {
+            if (shouldShow) {
+              setShouldShow(false);
+              setTimeout(() => {
+                setCountdown(null);
+                setNextItemType(null);
+              }, 300);
+            }
+            return;
+          }
+          
+          let isInRestPeriod = false;
+          let nextItem = null;
+          let restEndTime = null;
+          
+          // 過濾今天的預約（V3 結構）
+          const todayBookings = todayData.all_bookings.filter((booking: any) => 
+            booking.date === today && booking.status !== 'cancelled'
+          );
+
+          // 檢查每個預約項目，找尋休息期間
+          for (let i = 0; i < todayBookings.length; i++) {
+            const appointment = todayBookings[i];
+            const startDateTime = dayjs(appointment.start_time).tz('Asia/Taipei');
+            const endDateTime = dayjs(appointment.end_time).tz('Asia/Taipei');
+            
+            // 檢查當前是否在這個項目的休息期間內
+            if (i + 1 < todayBookings.length) {
+              const nextAppointment = todayBookings[i + 1];
+              const nextStartDateTime = dayjs(nextAppointment.start_time).tz('Asia/Taipei');
+              
+              // 休息期間：從當前項目結束到下一個項目開始
+              if (now.isAfter(endDateTime) && now.isBefore(nextStartDateTime)) {
+                isInRestPeriod = true;
+                nextItem = nextAppointment;
+                restEndTime = nextStartDateTime;
+                break;
+              }
+            }
+          }
+
+          // 檢查是否在第一個項目之前的等待時間
+          if (!isInRestPeriod && todayData.length > 0) {
+            const firstAppointment = todayData[0];
+            const firstStartDateTime = dayjs(firstAppointment.start_time).tz('Asia/Taipei');
+            if (now.isBefore(firstStartDateTime)) {
+              isInRestPeriod = true;
+              nextItem = firstAppointment;
+              restEndTime = firstStartDateTime;
+            }
+          }
+
+          // 如果不在休息期間，隱藏倒數計時
+          if (!isInRestPeriod || !nextItem || !restEndTime) {
+            if (shouldShow) {
+              setShouldShow(false);
+              setTimeout(() => {
+                setCountdown(null);
+                setNextItemType(null);
+              }, 300);
+            }
+            return;
+          }
+
+          // 計算倒數計時
+          const diffMs = restEndTime.diff(now);
+          
+          if (diffMs <= 0) {
+            if (shouldShow) {
+              setShouldShow(false);
+              setTimeout(() => {
+                setCountdown(null);
+                setNextItemType(null);
+              }, 300);
+            }
+            return;
+          }
+
+          const totalSeconds = Math.floor(diffMs / 1000);
+          const hours = Math.floor(totalSeconds / 3600);
+          const minutes = Math.floor((totalSeconds % 3600) / 60);
+          const seconds = totalSeconds % 60;
+
+          // 使用 requestAnimationFrame 確保穩定更新
+          animationFrameRef.current = requestAnimationFrame(() => {
+            setCountdown(prev => {
+              if (!prev || prev.hours !== hours || prev.minutes !== minutes || prev.seconds !== seconds) {
+                return { hours, minutes, seconds };
+              }
+              return prev;
+            });
+            setNextItemType(nextItem.category || 'booking');
+            setShouldShow(true);
+          });
+        } catch (error) {
+          console.error('Error updating countdown:', error);
+        }
+      };
+
+      updateCountdown();
+      const interval = setInterval(updateCountdown, 1000);
+      
+      return () => {
+        clearInterval(interval);
+        if (animationFrameRef.current) {
+          cancelAnimationFrame(animationFrameRef.current);
+        }
+      };
+    }, []);
+
+    if (!shouldShow || !countdown || !nextItemType) return null;
+
+    // 格式化顯示 - 使用穩定的顯示方式
+    const formatTime = () => {
+      if (countdown.hours > 0) {
+        return (
+          <span className="inline-flex items-center gap-1">
+            距離下一個{nextItemType === 'activity' ? '活動' : '預約'}還有 
+            <span className="text-green-600 font-bold min-w-[2rem] text-center">{countdown.hours}</span>
+            <span className="text-black">小時</span>
+            <span className="text-green-600 font-bold min-w-[2rem] text-center">{countdown.minutes}</span>
+            <span className="text-black">分鐘</span>
+          </span>
+        );
+      } else if (countdown.minutes > 0) {
+        return (
+          <span className="inline-flex items-center gap-1">
+            距離下一個{nextItemType === 'activity' ? '活動' : '預約'}還有 
+            <span className="text-green-600 font-bold min-w-[2rem] text-center">{countdown.minutes}</span>
+            <span className="text-black">分鐘</span>
+            <span className="text-green-600 font-bold min-w-[2rem] text-center">{countdown.seconds.toString().padStart(2, '0')}</span>
+            <span className="text-black">秒</span>
+          </span>
+        );
+      } else {
+        return (
+          <span className="inline-flex items-center gap-1">
+            距離下一個{nextItemType === 'activity' ? '活動' : '預約'}還有 
+            <span className="text-green-600 font-bold min-w-[2rem] text-center">{countdown.seconds}</span>
+            <span className="text-black">秒</span>
+          </span>
+        );
+      }
+    };
+
+    return (
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 mb-6 transition-all duration-300 ease-in-out">
+        <div className="text-center">
+          <div className="text-black font-medium text-base">
+            {formatTime()}
+          </div>
+        </div>
+      </div>
+    );
+  };
 
   // 從 Supabase 載入預約數據（根據當前分頁）
   useEffect(() => {
@@ -201,12 +426,129 @@ export default function AppointmentsPage() {
     };
   }, [filter, currentPage]);
 
+  // 從 Supabase 讀取設定資料
+  useEffect(() => {
+    const fetchSettings = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data: settingsData, error: settingsError } = await supabase
+          .from('settings')
+          .select('service_settings')
+          .eq('user_id', user.id)
+          .single();
+
+        if (settingsError) throw settingsError;
+
+        // 讀取服務設定
+        if (settingsData?.service_settings?.services) {
+          setServices(settingsData.service_settings.services);
+        }
+      } catch (error) {
+        console.error('讀取設定資料失敗:', error);
+      } finally {
+        setIsLoadingSettings(false);
+      }
+    };
+
+    fetchSettings();
+    fetchBlacklistSet(); // 🛠️ 初始化時建立全域黑名單索引
+  }, []);
+
+  // 🔔 監聽黑名單更新事件
+  useEffect(() => {
+    const handleBlacklistUpdate = (event: CustomEvent) => {
+      console.log('🔔 [Appointments] 收到黑名單更新通知:', event.detail);
+      
+      // 🚨 降魔咒：實時監聽優化 - 強制重新載入並顯示最新狀態
+      console.log('🔄 [Appointments] 立即重新載入預約數據以反映黑名單變更...');
+      
+      // 重新載入預約數據以反映黑名單變更
+      const { data: { user } } = supabase.auth.getUser();
+      if (user) {
+        loadBookings(user.id);
+        // 🛠️ 同時更新黑名單索引
+        fetchBlacklistSet();
+      }
+      
+      // 顯示成功通知
+      toast({
+        title: "黑名單狀態已更新",
+        description: "預約管理頁面已同步更新",
+        duration: 3000
+      });
+    };
+
+    window.addEventListener('blacklistUpdated', handleBlacklistUpdate as EventListener);
+    
+    console.log('👂 [Appointments] 黑名單監聽器已啟動');
+    
+    return () => {
+      window.removeEventListener('blacklistUpdated', handleBlacklistUpdate as EventListener);
+      console.log('🔇 [Appointments] 黑名單監聽器已移除');
+    };
+  }, []);
+
   // 當過濾器變更時重置頁碼
   useEffect(() => {
     setCurrentPage(0);
   }, [filter]);
 
   const [filteredBookings, setFilteredBookings] = useState<Booking[]>([]);
+  const [blacklistSet, setBlacklistSet] = useState<Set<string>>(new Set()); // 🛠️ 全域黑名單索引
+
+  // 🛠️ 建立全域黑名單索引 - 從 shop_customers_v3 抓取所有黑名單手機號碼
+  const fetchBlacklistSet = async () => {
+    try {
+      console.log('🔍 [Blacklist Index] 正在建立全域黑名單索引...');
+      
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+
+      // 🔧 V3 資料路徑：從 all_customers JSON 裡的 status.is_blacklisted 判斷
+      const { data: customerData, error: customersError } = await supabase
+        .from('shop_customers_v3')
+        .select('all_customers')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (customersError) {
+        console.error('❌ [Blacklist Index] 查詢黑名單失敗:', customersError);
+        return;
+      }
+
+      // 🛠️ 檢查 V3 資料路徑：從 all_customers JSON 的 status.is_blacklisted 判斷
+      const blacklistedPhones = customerData?.all_customers?.filter((customer: any) => {
+        // 檢查三個地方的黑名單狀態
+        const isBlacklisted = customer.is_blacklisted || 
+                              customer.status?.is_blacklisted || 
+                              customer.tags?.includes('黑名單');
+        
+        if (isBlacklisted) {
+          console.log('📋 [Blacklist Index] 發現黑名單客戶:', {
+            name: customer.name,
+            phone: customer.phone,
+            is_blacklisted: customer.is_blacklisted,
+            status_is_blacklisted: customer.status?.is_blacklisted,
+            tags: customer.tags
+          });
+        }
+        
+        return isBlacklisted;
+      }).map((customer: any) => customer.phone) || [];
+
+      const newBlacklistSet = new Set(blacklistedPhones);
+      setBlacklistSet(newBlacklistSet);
+      
+      console.log('✅ [Blacklist Index] 全域黑名單索引建立完成:', {
+        totalBlacklisted: newBlacklistSet.size,
+        blacklistedPhones: Array.from(newBlacklistSet)
+      });
+    } catch (error) {
+      console.error('❌ [Blacklist Index] 建立索引失敗:', error);
+    }
+  };
 
   // 當沒有搜尋詞時，同步顯示當前分頁資料
   useEffect(() => {
@@ -229,7 +571,7 @@ export default function AppointmentsPage() {
         const allData = [...pendingData, ...confirmedData, ...historyData];
         const filtered = allData.filter(booking =>
           booking.customer_name.toLowerCase().includes(term) ||
-          booking.phone.includes(term)
+          booking.customer_phone.includes(term)
         );
         setFilteredBookings(filtered);
         
@@ -254,8 +596,25 @@ export default function AppointmentsPage() {
     }
   }, [searchTerm]);
 
+  // 檢查預約是否正在進行中
+  const isInProgressBooking = (booking: Booking) => {
+    if (booking.status !== 'confirmed') return false;
+    if (!booking.schedule?.start || !booking.schedule?.end) return false;
+
+    const now = new Date();
+    const startTime = new Date(booking.schedule.start);
+    const endTime = new Date(booking.schedule.end);
+
+    return now >= startTime && now < endTime;
+  };
+
+  // 過濾非預約項目：排除店內任務，專注於真實客戶
+  const customerBookings = filteredBookings.filter(booking => 
+    booking.customer_name !== "店內任務"
+  );
+
   // 排序：在「已確認」分頁中，正在進行中的訂單置頂
-  const sortedBookings = [...filteredBookings].sort((a, b) => {
+  const sortedBookings = [...customerBookings].sort((a, b) => {
     if (filter === "confirmed") {
       const aInProgress = isInProgressBooking(a);
       const bInProgress = isInProgressBooking(b);
@@ -269,26 +628,14 @@ export default function AppointmentsPage() {
   // 檢查預約是否即將到期（剩2小時內）
   const isUrgentBooking = (booking: Booking) => {
     if (booking.status !== 'pending') return false;
-    if (!booking.date || !booking.time) return false;
+    if (!booking.schedule?.start) return false;
 
-    const bookingDateTime = new Date(`${booking.date}T${booking.time}`);
+    const bookingDateTime = new Date(booking.schedule.start);
     const now = new Date();
     const timeDiff = bookingDateTime.getTime() - now.getTime();
     const hoursDiff = timeDiff / (1000 * 60 * 60);
 
     return hoursDiff > 0 && hoursDiff <= 2;
-  };
-
-  // 檢查預約是否正在進行中
-  const isInProgressBooking = (booking: Booking) => {
-    if (booking.status !== 'confirmed') return false;
-    if (!booking.start_time || !booking.end_time) return false;
-
-    const now = new Date();
-    const startTime = new Date(booking.start_time);
-    const endTime = new Date(booking.end_time);
-
-    return now >= startTime && now < endTime;
   };
 
   // 需要單獨獲取待處理數量，因為 bookingsList 只包含當前過濾器的數據
@@ -315,7 +662,7 @@ export default function AppointmentsPage() {
           {
             event: '*',
             schema: 'public',
-            table: 'bookings',
+            table: 'shop_bookings_v3',
             filter: `user_id=eq.${user.id}`
           },
           async (payload) => {
@@ -503,27 +850,38 @@ export default function AppointmentsPage() {
     const endTime = minutesToTimeString(endTimeMinutes);
     setSuggestedEndTime(endTime);
 
-    // 獲取同一天的所有已確認預約
-    const sameDayBookings = bookingsList.filter(b => 
-      b.date === date && 
-      b.status === "confirmed" &&
-      b.time
-    );
+    // 獲取同一天的所有已確認預約 - 適配 V3 數據結構
+    const sameDayBookings = bookingsList.filter(b => {
+      // V3 數據：schedule.start 是完整的日期時間，需要提取日期部分
+      let bookingDate;
+      if (b.schedule?.start) {
+        const startDate = new Date(b.schedule.start);
+        bookingDate = startDate.toISOString().split('T')[0]; // 提取 YYYY-MM-DD
+      } else if (b.schedule?.date) {
+        bookingDate = b.schedule.date; // 兼容舊格式
+      }
+      
+      return bookingDate === date && 
+             b.status === "confirmed" &&
+             b.schedule?.start;
+    });
 
     let hasOverlap = false;
     let hasShortGap = false;
     let conflictMessage = '';
 
     for (const existingBooking of sameDayBookings) {
-      if (!existingBooking.duration) continue;
+      if (!existingBooking.schedule?.duration) continue;
       
-      const existingStartMinutes = parseTimeToMinutes(existingBooking.time);
-      const existingEndMinutes = existingStartMinutes + existingBooking.duration;
+      const existingStartTime = new Date(existingBooking.schedule.start);
+      const existingStartMinutes = existingStartTime.getHours() * 60 + existingStartTime.getMinutes();
+      const existingEndMinutes = existingStartMinutes + parseInt(existingBooking.schedule.duration);
 
       // 檢查新預約是否與現有預約重疊
       if (startTimeMinutes < existingEndMinutes && endTimeMinutes > existingStartMinutes) {
         hasOverlap = true;
-        conflictMessage = `⚠️ 時間重疊：與「${existingBooking.customer_name}」的預約 (${existingBooking.time}) 重疊`;
+        const existingTime = new Date(existingBooking.schedule.start).toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' });
+        conflictMessage = `⚠️ 時間重疊：與「${existingBooking.customer_name}」的預約 (${existingTime}) 重疊`;
         break;
       }
 
@@ -630,29 +988,61 @@ export default function AppointmentsPage() {
       return;
     }
 
-    // 檢查黑名單
+    // 檢查黑名單 - 優先檢查 V3 客戶資料，如果失敗則跳過
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (user) {
         const normalizedPhone = newBooking.phone.replace(/[^\d]/g, '');
-        const { data: customer } = await supabase
-          .from('customers')
-          .select('is_blacklisted, no_show_count, customer_name')
+        
+        // 先嘗試從 V3 的 shop_bookings_v3 中查找客戶歷史記錄
+        const { data: bookingHistory } = await supabase
+          .from('shop_bookings_v3')
+          .select('all_bookings')
           .eq('user_id', user.id)
-          .eq('phone', normalizedPhone)
           .maybeSingle();
-
-        if (customer && customer.is_blacklisted) {
-          setErrorMessage({
-            title: "⚠️ 此客戶在黑名單中",
-            description: `${customer.customer_name}（${newBooking.phone}）已被加入黑名單，爽約次數：${customer.no_show_count} 次。如需預約，請先在會員管理中移除黑名單。`
+        
+        let customerName = newBooking.name;
+        let noShowCount = 0;
+        let isBlacklisted = false;
+        
+        if (bookingHistory?.all_bookings) {
+          // 從預約歷史中查找該客戶的記錄
+          const customerBookings = bookingHistory.all_bookings.filter((booking: any) => {
+            const bookingPhone = booking.customer_phone?.replace(/[^\d]/g, '');
+            return bookingPhone === normalizedPhone;
           });
-          setShowErrorDialog(true);
-          return;
+          
+          if (customerBookings.length > 0) {
+            customerName = customerBookings[0].customer_name || newBooking.name;
+            // 統計 no_show 次數
+            noShowCount = customerBookings.filter((booking: any) => booking.status === 'no_show').length;
+            // 如果超過 3 次 no_show，視為黑名單
+            isBlacklisted = noShowCount >= 3;
+          }
+        }
+        
+        if (isBlacklisted) {
+          console.log('⚠️ [Appointments] 檢測到黑名單客戶預約:', {
+            customerName,
+            phone: newBooking.phone,
+            noShowCount
+          });
+          
+          // 添加黑名單標籤到預約（不阻擋預約）
+          const bookingWithBlacklistTag = {
+            ...newBooking,
+            tags: [...(newBooking.tags || []), '黑名單'],
+            isBlacklisted: true,
+            blacklistReason: `爽約 ${noShowCount} 次`
+          };
+          
+          // 繼續預約流程，但記錄黑名單狀態
+          console.log('📝 [Appointments] 黑名單客戶預約已添加標籤，繼續處理');
         }
       }
     } catch (error) {
       console.error('檢查黑名單失敗:', error);
+      // 黑名單檢查失敗不應該阻擋預約，只記錄錯誤
     }
     
     const duration = serviceDurationMap[newBooking.service] || 60;
@@ -771,6 +1161,13 @@ export default function AppointmentsPage() {
         </div>
       </div>
 
+      {/* 倒數計時：距離下一個項目 */}
+      <div className="px-8 pt-2 pb-4">
+        <div className="max-w-[1400px] mx-auto">
+          <UniversalCountdown />
+        </div>
+      </div>
+
       {/* 主內容區 - 卡片化清單 */}
       <div className="px-8 pb-8">
         <div className="max-w-[1400px] mx-auto space-y-4">
@@ -791,6 +1188,12 @@ export default function AppointmentsPage() {
                 {searchTerm ? "請試試其他關鍵字" : "目前沒有預約"}
               </p>
             </div>
+          ) : sortedBookings.length === 0 ? (
+            <div className="text-center py-12">
+              <p className="text-slate-400 text-sm">
+                {searchTerm ? "請試試其他關鍵字" : "目前尚無預約"}
+              </p>
+            </div>
           ) : (
             sortedBookings.map((booking) => (
             <div
@@ -800,8 +1203,13 @@ export default function AppointmentsPage() {
                 highlightedBookingId === booking.id
                   ? "highlight-flash"
                   : ""
-              } ${
-                booking.source === 'AI_Chatbot'
+              }${
+                // 🛠️ 預約名片強制標記 - 黑名單安檢邏輯
+                blacklistSet.has(booking.customer_phone)
+                  ? " border-2 border-red-500 bg-red-50/30"
+                  : booking.customer_name === "店內任務"
+                  ? "border-2 border-orange-300 bg-orange-50/50"
+                  : booking.admin_meta?.source === 'AI_Chatbot'
                   ? "border-2 border-red-200"
                   : isInProgressBooking(booking)
                   ? "border-2 border-green-500 bg-green-50 ring-2 ring-green-200"
@@ -809,8 +1217,6 @@ export default function AppointmentsPage() {
                   ? "border-2 border-red-500 bg-red-50"
                   : booking.status === "pending"
                   ? "border-l-4 border-l-[#EF4444] border-slate-100 rounded-r-xl"
-                  : booking.hasConflict
-                  ? "border-2 border-red-200 bg-red-50/30"
                   : "border-slate-100"
               }`}
             >
@@ -818,7 +1224,7 @@ export default function AppointmentsPage() {
                 {/* 左側區域 */}
                 <div className="flex items-center gap-4">
                   <div className="w-12 h-12 bg-[#F4F4F5] rounded-full flex items-center justify-center">
-                    {booking.source === 'AI_Chatbot' ? (
+                    {booking.admin_meta?.source === 'AI_Chatbot' ? (
                       <Bot className="w-5 h-5 text-[#1A1A1A]" />
                     ) : (
                       <Phone className="w-5 h-5 text-[#1A1A1A]" />
@@ -826,28 +1232,46 @@ export default function AppointmentsPage() {
                   </div>
                   <div>
                     <div className="flex items-center gap-2">
-                      <h3 className="text-lg font-bold text-[#1A1A1A]">{booking.customer_name}</h3>
+                      <h3 className={`text-lg font-bold ${booking.customer_name === "店內任務" ? "text-orange-600" : "text-[#1A1A1A]"}`}>
+                        {booking.customer_name}
+                        {booking.customer_name === "店內任務" && (
+                          <span className="ml-2 text-xs bg-orange-200 text-orange-700 px-2 py-0.5 rounded-full font-medium">店內任務</span>
+                        )}
+                      </h3>
+                      {/* 🛠️ 預約名片強制標記 - 黑名單標籤 */}
+                      {blacklistSet.has(booking.customer_phone) && (
+                        <span className="text-xs bg-red-500 text-white px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
+                          <AlertTriangle className="w-3 h-3" />
+                          🚫 黑名單
+                        </span>
+                      )}
                       {isInProgressBooking(booking) && (
                         <span className="text-xs bg-green-500 text-white px-2 py-0.5 rounded-full font-medium animate-pulse">正在進行中</span>
                       )}
-                      {booking.source === 'AI_Chatbot' && (
+                      {booking.admin_meta?.source === 'AI_Chatbot' && (
                         <span className="text-xs text-red-500 font-medium">AI 自動預約</span>
                       )}
                     </div>
-                    {booking.tags && booking.tags.length > 0 && (
+                    {booking.admin_meta?.tags && booking.admin_meta.tags.length > 0 && (
                       <div className="flex items-center gap-1 mt-1">
-                        {booking.tags.map((tag, index) => (
+                        {/* 🛠️ 預約名片強制標記 - 黑名單標籤優先顯示 */}
+                        {blacklistSet.has(booking.customer_phone) && !booking.admin_meta.tags.includes('黑名單') && (
+                          <span className="text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded font-medium">
+                            🚫 黑名單
+                          </span>
+                        )}
+                        {booking.admin_meta.tags.map((tag: string, index: number) => (
                           <span key={index} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
                             {tag}
                           </span>
                         ))}
                       </div>
                     )}
-                    <p className="text-slate-400 mt-0.5 text-sm">{booking.phone}</p>
-                    {booking.ai_notes && (
+                    <p className="text-slate-400 mt-0.5 text-sm">{booking.customer_phone}</p>
+                    {booking.admin_meta?.ai_notes && (
                       <p className="text-purple-600 mt-1 text-xs flex items-center gap-1">
                         <MessageCircle className="w-3 h-3" />
-                        {booking.ai_notes}
+                        {booking.admin_meta.ai_notes}
                       </p>
                     )}
                   </div>
@@ -857,13 +1281,18 @@ export default function AppointmentsPage() {
                 <div className="flex-1 px-8">
                   <div className="flex items-center gap-2">
                     <Clock className="w-4 h-4 text-[#1A1A1A]" />
-                    <p className="text-base font-semibold text-[#1A1A1A]">{booking.service}</p>
+                    <p className="text-base font-semibold text-[#1A1A1A]">{booking.service_info?.name}</p>
                   </div>
                   <p className="text-slate-400 mt-0.5 text-sm">
-                    {booking.date} {booking.time}
-                    {booking.duration && ` - ${minutesToTimeString(parseTimeToMinutes(booking.time) + booking.duration)}`}
+                    {booking.schedule?.date} {new Date(booking.schedule?.start || '').toLocaleTimeString('zh-TW', { hour: '2-digit', minute: '2-digit' })}
+                    {booking.schedule?.duration && (() => {
+                      const startTime = new Date(booking.schedule?.start || '');
+                      const startMinutes = startTime.getHours() * 60 + startTime.getMinutes();
+                      const endMinutes = startMinutes + parseInt(booking.schedule?.duration || '0');
+                      return ` - ${minutesToTimeString(endMinutes)}`;
+                    })()}
                   </p>
-                  {booking.hasConflict && (
+                  {false && ( // V3 結構中沒有 hasConflict 欄位
                     <p className="text-red-500 text-xs mt-1 flex items-center gap-1">
                       <X className="w-3 h-3" />
                       時段衝突警告
@@ -908,9 +1337,9 @@ export default function AppointmentsPage() {
               </div>
               
               {/* 備註區域 */}
-              {booking.note && (
+              {booking.admin_meta?.notes && (
                 <div className="mt-3 pt-3 border-t border-slate-100">
-                  <p className="text-sm text-slate-500">備註：{booking.note}</p>
+                  <p className="text-sm text-slate-500">備註：{booking.admin_meta.notes}</p>
                 </div>
               )}
             </div>
@@ -990,7 +1419,7 @@ export default function AppointmentsPage() {
                     required
                   >
                     <option value="">請選擇項目</option>
-                    {mockServices.map((service) => (
+                    {services.map((service) => (
                       <option key={service.id} value={service.name}>
                         {service.name} ({service.duration}分鐘) - NT${service.price}
                       </option>

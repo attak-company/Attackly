@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Save, Bot, Plus, X, Check } from "lucide-react";
 import { createClient } from "@/lib/supabase";
+import { getAISystemPrompt, getAITaggingPrompt, getAIAnalysisPrompt } from "@/lib/aiHelper";
 
 export default function AISettingsPage() {
   const [config, setConfig] = useState<{
@@ -81,7 +82,7 @@ export default function AISettingsPage() {
     <div className="max-w-4xl mx-auto space-y-8">
       <div>
         <h2 className="text-3xl font-bold tracking-tight text-gray-900">AI 客服設定</h2>
-        <p className="text-gray-700 mt-2">設定 AI 的性格與回應規則。</p>
+        <p className="text-gray-700 mt-2">設定 AI 的性格與回應規則，支援 V2 資料結構分析。</p>
       </div>
 
       <div className="grid grid-cols-1 gap-6">
@@ -265,6 +266,30 @@ export default function AISettingsPage() {
               </>
             )}
           </button>
+        </div>
+
+        {/* V2 資料結構說明 */}
+        <div className="bg-blue-50 p-6 rounded-xl border border-blue-200">
+          <div className="flex items-center mb-4">
+            <Bot className="w-5 h-5 text-blue-600 mr-2" />
+            <h3 className="font-bold text-lg text-blue-900">V2 資料結構支援</h3>
+          </div>
+          <div className="space-y-3">
+            <div className="text-sm text-blue-800">
+              <p className="font-medium mb-2">AI 現在可以精準分析以下 V2 資料結構：</p>
+              <ul className="space-y-1 ml-4">
+                <li>• <code className="bg-blue-100 px-1 rounded">service_content</code> - 服務價格、類別分析</li>
+                <li>• <code className="bg-blue-100 px-1 rounded">schedule_config</code> - 排程時長、時間分析</li>
+                <li>• <code className="bg-blue-100 px-1 rounded">admin_meta.ai_notes</code> - AI 分析結果儲存</li>
+                <li>• <code className="bg-blue-100 px-1 rounded">customer_detail</code> - 客戶偏好標籤</li>
+              </ul>
+            </div>
+            <div className="bg-white p-3 rounded-lg border border-blue-200">
+              <p className="text-xs text-blue-700 font-mono break-all">
+                System Prompt: {getAISystemPrompt().substring(0, 100)}...
+              </p>
+            </div>
+          </div>
         </div>
       </div>
     </div>

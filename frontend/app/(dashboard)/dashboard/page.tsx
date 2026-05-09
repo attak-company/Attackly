@@ -5,6 +5,7 @@
 // ====================
 import { MousePointerClick, DollarSign, MessageCircle, TrendingUp, Clock, Crown } from "lucide-react";
 import { useState, useEffect, useMemo } from "react";
+import { createClient } from "@/lib/supabase";
 import {
   AreaChart,
   Area,
@@ -71,21 +72,176 @@ export default function DashboardPage() {
   // 📊 STATE MANAGEMENT
   // ====================
   const [timePeriod, setTimePeriod] = useState<"7d" | "4w" | "3m">("7d");
-  const [chartType, setChartType] = useState<"conversions" | "revenue" | "conversations">("conversions");
+  const [chartType, setChartType] = useState<"conversions" | "revenue" | "services">("conversions");
   const [savedHours, setSavedHours] = useState(0);
   const [isChartLoading, setIsChartLoading] = useState(true);
   const [isDataReady, setIsDataReady] = useState(false);
   const [renderKey, setRenderKey] = useState(0);
   const [animationPhase, setAnimationPhase] = useState<'line' | 'dot' | 'label' | 'complete'>('line');
+  const supabase = createClient();
+  
+  // 真實數據狀態
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [availableServices, setAvailableServices] = useState<Array<{ id: string; name: string; description: string; price: number; duration: number; category: string }>>([]);
+  const [isLoadingData, setIsLoadingData] = useState(true);
 
   // ====================
   // 📈 DATA & CALCULATIONS
   // ====================
-  // 對話總量數據（模擬）
-  const totalConversations = 156;
+  // 從 Supabase 讀取真實數據
+  useEffect(() => {
+    const fetchRealData = async () => {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
 
-  // 計算省下的小時數：對話總量 * 1.5 分鐘 / 60
-  const calculatedHours = (totalConversations * 1.5) / 60;
+        // 讀取預約資料 - 從 V3 讀取
+        const { data: appointmentsData, error: appointmentsError } = await supabase
+          .from('shop_bookings_v3')
+          .select('all_bookings')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (appointmentsError) throw appointmentsError;
+        
+        // 從 V3 結構提取所有預約並按建立時間排序
+        const allBookings = appointmentsData?.all_bookings || [];
+        const sortedBookings = allBookings.sort((a: any, b: any) => 
+          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+        );
+        setAppointments(sortedBookings);
+
+        // 讀取服務設定
+        const { data: settingsData, error: settingsError } = await supabase
+          .from('settings')
+          .select('service_settings')
+          .eq('user_id', user.id)
+          .maybeSingle();
+
+        if (settingsError) throw settingsError;
+        
+        // 從設定中提取可用服務項目
+        const services = settingsData?.service_settings?.services || [];
+        setAvailableServices(services);
+
+      } catch (error) {
+        console.error('讀取數據失敗:', error);
+      } finally {
+        setIsLoadingData(false);
+      }
+    };
+
+    fetchRealData();
+  }, []);
+
+  // 計算真實統計數據 - V3 數據提取
+  const totalAppointments = appointments.length;
+  
+  // 計算 AI 轉換數：從 admin_meta.source === 'AI_Chatbot' 計算
+  const successfulConversions = appointments.filter(apt => 
+    apt.admin_meta?.source === 'AI_Chatbot'
+  ).length;
+  
+  // 計算預估營收：只計算AI客服預約且未取消的價格（防禦性編碼）
+  const totalRevenue = appointments.reduce((sum, apt) => {
+    if (apt.admin_meta?.source !== 'AI_Chatbot') return sum;
+    if (apt.status === 'cancelled') return sum; // 排除已取消的預約
+    const price = apt.service_info?.price || 0;
+    const priceValue = typeof price === 'number' ? price : parseFloat(price);
+    return sum + (isNaN(priceValue) ? 0 : priceValue);
+  }, 0);
+  
+  // 計算 AI 服務總量：AI 轉換數 * 1.2（漏斗乘數，代表 AI 實際處理的諮詢量）
+  const aiServiceCount = Math.round(successfulConversions * 1.2);
+
+  // 計算 AI 省下的小時數：AI 轉換數 * 5 分鐘 / 60（更精確的客服溝通時間）
+  const calculatedHours = (successfulConversions * 5) / 60;
+  // 計算增長率：今天 vs 過去7天（零值保護）
+  const calculateGrowthRate = (todayData: any[], pastData: any[], getValue: (item: any) => number) => {
+    const todayValue = todayData.reduce((sum, item) => sum + getValue(item), 0);
+    const pastValue = pastData.reduce((sum, item) => sum + getValue(item), 0);
+    
+    // 零值保護：避免除以零錯誤
+    if (pastValue === 0) {
+      return todayValue > 0 ? 100 : 0; // 如果過去是0，今天有數據就是100%增長
+    }
+    
+    const growthRate = ((todayValue - pastValue) / pastValue) * 100;
+    return Math.round(growthRate * 10) / 10; // 保留一位小數
+  };
+
+  // 獲取今天和過去7天的日期範圍
+  const today = new Date();
+  const todayStr = today.toISOString().split('T')[0];
+  const sevenDaysAgo = new Date(today);
+  sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+  const sevenDaysAgoStr = sevenDaysAgo.toISOString().split('T')[0];
+
+  // 篩選今天和過去7天的數據
+  const todayAppointments = appointments.filter(apt => {
+    const aptDate = apt.created_at ? apt.created_at.split('T')[0] : apt.date;
+    return aptDate === todayStr;
+  });
+
+  const pastAppointments = appointments.filter(apt => {
+    const aptDate = apt.created_at ? apt.created_at.split('T')[0] : apt.date;
+    return aptDate >= sevenDaysAgoStr && aptDate < todayStr;
+  });
+
+  const todayConversations = appointments.filter(apt => {
+    const aptDate = apt.created_at ? apt.created_at.split('T')[0] : apt.date;
+    return aptDate === todayStr && apt.admin_meta?.source === 'AI_Chatbot';
+  });
+
+  const pastConversations = appointments.filter(apt => {
+    const aptDate = apt.created_at ? apt.created_at.split('T')[0] : apt.date;
+    return aptDate >= sevenDaysAgoStr && aptDate < todayStr && apt.admin_meta?.source === 'AI_Chatbot';
+  });
+
+  // 計算各項指標的增長率 - V3 適應
+  const conversionsGrowthRate = calculateGrowthRate(
+    todayAppointments.filter(apt => apt.admin_meta?.source === 'AI_Chatbot'),
+    pastAppointments.filter(apt => apt.admin_meta?.source === 'AI_Chatbot'),
+    () => 1
+  );
+
+  const revenueGrowthRate = calculateGrowthRate(
+    todayAppointments.filter(apt => apt.admin_meta?.source === 'AI_Chatbot' && apt.status !== 'cancelled'),
+    pastAppointments.filter(apt => apt.admin_meta?.source === 'AI_Chatbot' && apt.status !== 'cancelled'),
+    (apt) => typeof apt.service_info?.price === 'number' ? apt.service_info.price : parseFloat(apt.service_info?.price) || 0
+  );
+
+  // AI 服務總量的增長率
+  const servicesGrowthRate = conversionsGrowthRate;
+  
+  // 分析熱門預約項目 - V3 適應，只顯示設定中的項目
+  const trendingServices = useMemo(() => {
+    const serviceCounts: { [key: string]: number } = {};
+    
+    // 建立設定中可用服務項目的名稱集合
+    const availableServiceNames = new Set(
+      availableServices.map(service => service.name)
+    );
+    
+    // 從 all_bookings 中統計，只統計設定中的服務項目
+    appointments.forEach(apt => {
+      const serviceName = apt.service_info?.name || apt.service || '未分類';
+      
+      // 只統計設定中定義的服務項目
+      if (availableServiceNames.has(serviceName)) {
+        serviceCounts[serviceName] = (serviceCounts[serviceName] || 0) + 1;
+      }
+    });
+    
+    // 轉換為數組並排序
+    const sortedServices = Object.entries(serviceCounts)
+      .map(([serviceName, count]) => ({ keyword: serviceName, count }))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 5); // 取前 5 個
+    
+    // 如果沒有資料，返回空數組
+    return sortedServices;
+  }, [appointments, availableServices]);
 
   // 模擬不同時間段的數據
   const chartDataMap = {
@@ -201,12 +357,74 @@ export default function DashboardPage() {
         date.setDate(date.getDate() + i);
         const isTomorrow = i === 1;
         const isToday = i === 0;
+        const dateString = date.toISOString().split('T')[0];
 
-        // 模擬數據 - 實際應從後端獲取
-        const baseValue = chartType === "conversions" ? 30 :
-                         chartType === "revenue" ? 9000 : 120;
-        const randomFactor = 0.8 + Math.random() * 0.4;
-        const value = Math.round(baseValue * randomFactor * (i === 1 ? 0.9 : 1));
+        // 根據 chartType 計算真實數據 - V3 適應
+        let value = 0;
+        
+        // 修復時區問題：使用本地日期而非 UTC 日期
+        const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+        const localDateString = localDate.toISOString().split('T')[0];
+        
+        if (isTomorrow) {
+          // 明天預估邏輯：基於趨勢 + 已有預約
+          
+          // 1. 計算明天已有的 AI 預約數量
+          const tomorrowBookings = appointments.filter(apt => {
+            if (!apt.schedule?.date || apt.admin_meta?.source !== 'AI_Chatbot') return false;
+            const scheduleDate = apt.schedule.date;
+            return scheduleDate === localDateString;
+          }).length;
+          
+          // 2. 基於最近3天趨勢計算預估
+          const recentData = data.slice(-3);
+          let trendForecast = 0;
+          
+          if (recentData.length >= 3) {
+            const trend = (recentData[2].value - recentData[0].value) / 2;
+            trendForecast = Math.max(0, Math.round(recentData[2].value + trend));
+          } else {
+            // 如果數據不足3天，使用最近1天的數據作為基礎
+            const lastDayValue = recentData.length > 0 ? recentData[recentData.length - 1].value : 0;
+            trendForecast = Math.max(0, lastDayValue);
+          }
+          
+          // 3. 最終預估：已有預約 + 趨勢預估的額外部分
+          value = tomorrowBookings + Math.max(0, trendForecast - tomorrowBookings);
+          
+        } else {
+          // 歷史數據：實際計算
+          if (chartType === "conversions") {
+            // 計算當天的成功導流數（只計算AI客服預約）
+            value = appointments.filter(apt => {
+              if (!apt.admin_meta?.created_at || apt.admin_meta?.source !== 'AI_Chatbot') return false;
+              // 直接比較日期字符串，確保精確匹配
+              const createdDateStr = apt.admin_meta.created_at.split('T')[0];
+              return createdDateStr === localDateString;
+            }).length;
+          } else if (chartType === "revenue") {
+            // 計算當天的營收（只計算AI客服預約且未取消）
+            value = appointments.filter(apt => {
+              if (!apt.admin_meta?.created_at || apt.admin_meta?.source !== 'AI_Chatbot' || apt.status === 'cancelled') return false;
+              // 直接比較日期字符串，確保精確匹配
+              const createdDateStr = apt.admin_meta.created_at.split('T')[0];
+              return createdDateStr === localDateString;
+            }).reduce((sum, apt) => {
+              const price = apt.service_info?.price || 0;
+              return sum + (typeof price === 'number' ? price : parseFloat(price) || 0);
+            }, 0);
+          } else if (chartType === "services") {
+            // AI 服務總量：AI 轉換數 * 1.2（漏斗乘數）
+            value = Math.round(appointments.filter(apt => {
+              if (!apt.admin_meta?.created_at || apt.admin_meta?.source !== 'AI_Chatbot') return false;
+              // 直接比較日期字符串，確保精確匹配
+              const createdDateStr = apt.admin_meta.created_at.split('T')[0];
+              return createdDateStr === localDateString;
+            }).length * 1.2);
+          }
+        }
+
+        // 不使用預設值，真實反映數據
 
         data.push({
           date: `${date.getMonth() + 1}/${date.getDate()}`,
@@ -253,11 +471,44 @@ export default function DashboardPage() {
         const weekStart = new Date(targetYear, targetMonth, weekStartDay);
         const weekEnd = new Date(targetYear, targetMonth, weekEndDay);
 
-        // 模擬數據
-        const baseValue = chartType === "conversions" ? 120 :
-                         chartType === "revenue" ? 36000 : 400;
-        const randomFactor = 0.85 + Math.random() * 0.3;
-        const value = Math.round(baseValue * randomFactor);
+        // 計算該週的數據 - V3 適應
+        let value = 0;
+        
+        // 修復時區問題：使用本地日期而非 UTC 日期
+        const localWeekStart = new Date(weekStart.getTime() - weekStart.getTimezoneOffset() * 60000);
+        const localWeekEnd = new Date(weekEnd.getTime() - weekEnd.getTimezoneOffset() * 60000);
+        
+        if (chartType === "conversions") {
+          value = appointments.filter(apt => {
+            if (!apt.admin_meta?.created_at || apt.admin_meta?.source !== 'AI_Chatbot') return false;
+            // 使用本地日期進行比較
+            const createdDate = new Date(apt.admin_meta.created_at);
+            const localCreatedDate = new Date(createdDate.getTime() - createdDate.getTimezoneOffset() * 60000);
+            return localCreatedDate >= localWeekStart && localCreatedDate <= localWeekEnd;
+          }).length;
+        } else if (chartType === "revenue") {
+          value = appointments.filter(apt => {
+            if (!apt.admin_meta?.created_at || apt.admin_meta?.source !== 'AI_Chatbot' || apt.status === 'cancelled') return false;
+            // 使用本地日期進行比較
+            const createdDate = new Date(apt.admin_meta.created_at);
+            const localCreatedDate = new Date(createdDate.getTime() - createdDate.getTimezoneOffset() * 60000);
+            return localCreatedDate >= localWeekStart && localCreatedDate <= localWeekEnd;
+          }).reduce((sum, apt) => {
+            const price = apt.service_info?.price || 0;
+            return sum + (typeof price === 'number' ? price : parseFloat(price) || 0);
+          }, 0);
+        } else if (chartType === "services") {
+          // AI 服務總量：AI 轉換數 * 1.2（漏斗乘數）
+          value = Math.round(appointments.filter(apt => {
+            if (!apt.admin_meta?.created_at || apt.admin_meta?.source !== 'AI_Chatbot') return false;
+            // 使用本地日期進行比較
+            const createdDate = new Date(apt.admin_meta.created_at);
+            const localCreatedDate = new Date(createdDate.getTime() - createdDate.getTimezoneOffset() * 60000);
+            return localCreatedDate >= localWeekStart && localCreatedDate <= localWeekEnd;
+          }).length * 1.2);
+        }
+
+        // 不使用預設值，真實反映數據
 
         data.push({
           date: `${targetMonth + 1}月 W${targetWeekNum}`,
@@ -280,12 +531,47 @@ export default function DashboardPage() {
         const monthDate = new Date(currentYear, currentMonth + i, 1);
         const monthName = `${monthDate.getMonth() + 1}月`;
         const yearName = `${monthDate.getFullYear()}`;
+        const monthStart = new Date(monthDate.getFullYear(), monthDate.getMonth(), 1);
+        const monthEnd = new Date(monthDate.getFullYear(), monthDate.getMonth() + 1, 0);
 
-        // 模擬數據
-        const baseValue = chartType === "conversions" ? 380 :
-                         chartType === "revenue" ? 114000 : 1200;
-        const randomFactor = 0.9 + Math.random() * 0.2;
-        const value = Math.round(baseValue * randomFactor);
+        // 計算該月的數據 - V3 適應
+        let value = 0;
+        
+        // 修復時區問題：使用本地日期而非 UTC 日期
+        const localMonthStart = new Date(monthStart.getTime() - monthStart.getTimezoneOffset() * 60000);
+        const localMonthEnd = new Date(monthEnd.getTime() - monthEnd.getTimezoneOffset() * 60000);
+        
+        if (chartType === "conversions") {
+          value = appointments.filter(apt => {
+            if (!apt.admin_meta?.created_at || apt.admin_meta?.source !== 'AI_Chatbot') return false;
+            // 使用本地日期進行比較
+            const createdDate = new Date(apt.admin_meta.created_at);
+            const localCreatedDate = new Date(createdDate.getTime() - createdDate.getTimezoneOffset() * 60000);
+            return localCreatedDate >= localMonthStart && localCreatedDate <= localMonthEnd;
+          }).length;
+        } else if (chartType === "revenue") {
+          value = appointments.filter(apt => {
+            if (!apt.admin_meta?.created_at || apt.admin_meta?.source !== 'AI_Chatbot' || apt.status === 'cancelled') return false;
+            // 使用本地日期進行比較
+            const createdDate = new Date(apt.admin_meta.created_at);
+            const localCreatedDate = new Date(createdDate.getTime() - createdDate.getTimezoneOffset() * 60000);
+            return localCreatedDate >= localMonthStart && localCreatedDate <= localMonthEnd;
+          }).reduce((sum, apt) => {
+            const price = apt.service_info?.price || 0;
+            return sum + (typeof price === 'number' ? price : parseFloat(price) || 0);
+          }, 0);
+        } else if (chartType === "services") {
+          // AI 服務總量：AI 轉換數 * 1.2（漏斗乘數）
+          value = Math.round(appointments.filter(apt => {
+            if (!apt.admin_meta?.created_at || apt.admin_meta?.source !== 'AI_Chatbot') return false;
+            // 使用本地日期進行比較
+            const createdDate = new Date(apt.admin_meta.created_at);
+            const localCreatedDate = new Date(createdDate.getTime() - createdDate.getTimezoneOffset() * 60000);
+            return localCreatedDate >= localMonthStart && localCreatedDate <= localMonthEnd;
+          }).length * 1.2);
+        }
+
+        // 不使用預設值，真實反映數據
 
         data.push({
           date: monthName,
@@ -397,7 +683,7 @@ export default function DashboardPage() {
   // ====================
   // 📊 MEMOIZED CALCULATIONS
   // ====================
-  const chartData = useMemo(() => getDynamicChartData(), [timePeriod, chartType]);
+  const chartData = useMemo(() => getDynamicChartData(), [timePeriod, chartType, appointments]);
 
   // ====================
   // ⏰ DATA LOADING & ANIMATION
@@ -492,13 +778,13 @@ export default function DashboardPage() {
   const chartTitleMap = {
     conversions: "銷售轉換趨勢",
     revenue: "營收貢獻趨勢",
-    conversations: "對話總量趨勢",
+    services: "AI 服務趨勢",
   };
 
   const chartUnitMap = {
     conversions: "次",
     revenue: "元",
-    conversations: "則",
+    services: "則",
   };
 
   // ====================
@@ -513,64 +799,98 @@ export default function DashboardPage() {
         {/* 成功導流數 */}
         <div
           onClick={() => setChartType("conversions")}
-          className={`bg-white p-6 rounded-2xl shadow-sm border cursor-pointer transition-all hover:shadow-md group ${
-            chartType === "conversions" ? "border-zinc-900" : "border-zinc-200"
+          className={`bg-white p-6 rounded-2xl shadow-sm border cursor-pointer transition-all hover:shadow-md ${
+            chartType === "conversions" ? "border-red-500 shadow-red-100" : "border-zinc-200"
           }`}
         >
           <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-gray-50 rounded-xl group-hover:bg-red-50 transition-colors">
-              <MousePointerClick className="w-6 h-6 text-zinc-600 group-hover:text-red-500 transition-colors" />
+            <div className="p-3 bg-zinc-900 rounded-xl">
+              <MousePointerClick className="w-6 h-6 text-white" />
             </div>
-            <span className="text-sm text-emerald-600 font-medium">較上週提升 15%</span>
+            <div className="flex items-center gap-1">
+              <span className={`text-sm font-medium ${
+                conversionsGrowthRate === 0 ? 'text-zinc-400' : conversionsGrowthRate > 0 ? 'text-emerald-600' : 'text-red-600'
+              }`}>
+                {conversionsGrowthRate >= 0 ? '+' : ''}{conversionsGrowthRate}%
+              </span>
+              <span className="text-sm font-medium text-zinc-900">vs 7天前</span>
+            </div>
           </div>
           <h3 className="text-sm font-medium text-zinc-600 mb-1">成功導流數</h3>
-          <p className="text-3xl font-black text-zinc-900">42</p>
+          <div className="flex items-baseline gap-1">
+            <p className="text-5xl font-black text-zinc-900">{isLoadingData ? '...' : successfulConversions}</p>
+            <span className="text-lg font-medium text-zinc-500">次</span>
+          </div>
         </div>
 
         {/* 預估營收貢獻 */}
         <div
           onClick={() => setChartType("revenue")}
-          className={`bg-white p-6 rounded-2xl shadow-sm border cursor-pointer transition-all hover:shadow-md group ${
-            chartType === "revenue" ? "border-zinc-900" : "border-zinc-200"
+          className={`bg-white p-6 rounded-2xl shadow-sm border cursor-pointer transition-all hover:shadow-md ${
+            chartType === "revenue" ? "border-red-500 shadow-red-100" : "border-zinc-200"
           }`}
         >
           <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-gray-50 rounded-xl group-hover:bg-red-50 transition-colors">
-              <DollarSign className="w-6 h-6 text-zinc-600 group-hover:text-red-500 transition-colors" />
+            <div className="p-3 bg-zinc-900 rounded-xl">
+              <DollarSign className="w-6 h-6 text-white" />
             </div>
-            <span className="text-sm text-emerald-600 font-medium">較上週提升 12%</span>
+            <div className="flex items-center gap-1">
+              <span className={`text-sm font-medium ${
+                revenueGrowthRate === 0 ? 'text-zinc-400' : revenueGrowthRate > 0 ? 'text-emerald-600' : 'text-red-600'
+              }`}>
+                {revenueGrowthRate >= 0 ? '+' : ''}{revenueGrowthRate}%
+              </span>
+              <span className="text-sm font-medium text-zinc-900">vs 7天前</span>
+            </div>
           </div>
           <h3 className="text-sm font-medium text-zinc-600 mb-1">預估營收貢獻</h3>
-          <p className="text-3xl font-black text-zinc-900">$33,600</p>
+          <div className="flex items-baseline gap-1">
+            <p className="text-5xl font-black text-zinc-900">{isLoadingData ? '...' : totalRevenue.toLocaleString()}</p>
+            <span className="text-lg font-medium text-zinc-500">元</span>
+          </div>
         </div>
 
-        {/* 對話總量 */}
+        {/* AI 服務總量 */}
         <div
-          onClick={() => setChartType("conversations")}
-          className={`bg-white p-6 rounded-2xl shadow-sm border cursor-pointer transition-all hover:shadow-md group ${
-            chartType === "conversations" ? "border-zinc-900" : "border-zinc-200"
+          onClick={() => setChartType("services")}
+          className={`bg-white p-6 rounded-2xl shadow-sm border cursor-pointer transition-all hover:shadow-md ${
+            chartType === "services" ? "border-red-500 shadow-red-100" : "border-zinc-200"
           }`}
         >
           <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-gray-50 rounded-xl group-hover:bg-red-50 transition-colors">
-              <MessageCircle className="w-6 h-6 text-zinc-600 group-hover:text-red-500 transition-colors" />
+            <div className="p-3 bg-zinc-900 rounded-xl">
+              <MessageCircle className="w-6 h-6 text-white" />
             </div>
-            <span className="text-sm text-emerald-600 font-medium">較上週提升 18%</span>
+            <div className="flex items-center gap-1">
+              <span className={`text-sm font-medium ${
+                servicesGrowthRate === 0 ? 'text-zinc-400' : servicesGrowthRate > 0 ? 'text-emerald-600' : 'text-red-600'
+              }`}>
+                {servicesGrowthRate >= 0 ? '+' : ''}{servicesGrowthRate}%
+              </span>
+              <span className="text-sm font-medium text-zinc-900">vs 7天前</span>
+            </div>
           </div>
-          <h3 className="text-sm font-medium text-zinc-600 mb-1">對話總量</h3>
-          <p className="text-3xl font-black text-zinc-900">156則</p>
+          <h3 className="text-sm font-medium text-zinc-600 mb-1">AI 服務總量</h3>
+          <div className="flex items-baseline gap-1">
+            <p className="text-5xl font-black text-zinc-900">{isLoadingData ? '...' : aiServiceCount}</p>
+            <span className="text-lg font-medium text-zinc-500">則</span>
+          </div>
         </div>
 
         {/* AI 省時偵測器 */}
         <div className="bg-white p-6 rounded-2xl shadow-sm border border-zinc-200">
           <div className="flex items-center justify-between mb-4">
-            <div className="p-3 bg-gray-50 rounded-xl">
-              <Clock className="w-6 h-6 text-zinc-600" />
+            <div className="p-3 bg-zinc-900 rounded-xl">
+              <Clock className="w-6 h-6 text-white" />
             </div>
           </div>
           <h3 className="text-sm font-medium text-zinc-600 mb-1">AI 已為您省下</h3>
-          <p className="text-3xl font-black text-zinc-900">{savedHours.toFixed(1)}h</p>
+          <div className="flex items-baseline gap-1">
+            <p className="text-5xl font-black text-zinc-900">{isLoadingData ? '...' : savedHours.toFixed(1)}</p>
+            <span className="text-lg font-medium text-zinc-500">小時</span>
+          </div>
           <p className="text-xs text-zinc-500 mt-1 whitespace-nowrap">您可以將這些時間專注於服務品質與生活。</p>
+          <p className="text-xs text-zinc-400 mt-2 italic">*以每筆預約節省 5 分鐘客服溝通計算</p>
         </div>
       </div>
 
@@ -641,15 +961,15 @@ export default function DashboardPage() {
             營收貢獻
           </button>
           <button
-            onClick={() => setChartType("conversations")}
+            onClick={() => setChartType("services")}
             className={`flex-1 py-3 text-base font-medium rounded-xl transition-colors flex items-center justify-center gap-2 ${
-              chartType === "conversations"
+              chartType === "services"
                 ? "bg-zinc-900 text-white"
                 : "bg-zinc-100 text-zinc-700 hover:bg-zinc-200"
             }`}
           >
             <MessageCircle className="w-5 h-5" />
-            對話總量
+            AI 服務
           </button>
         </div>
 
@@ -658,6 +978,29 @@ export default function DashboardPage() {
           <div className="h-[350px] bg-zinc-100 rounded-xl animate-pulse" />
         ) : (
           <div className="h-[350px] relative">
+            {/* Debug info - 顯示數據狀態 */}
+            <div className="absolute top-2 right-2 text-xs text-zinc-500 z-20">
+              數據點: {chartData.length} | 類型: {chartType}
+              {chartData.length > 0 && ` | 第一個值: ${chartData[0]?.value}`}
+              {appointments.length > 0 && ` | 預約數: ${appointments.length}`}
+              {appointments.length > 0 && ` | AI預約數: ${appointments.filter(apt => apt.admin_meta?.source === 'AI_Chatbot').length}`}
+              {chartData.length > 0 && ` | 今天日期: ${new Date().toISOString().split('T')[0]}`}
+              {(() => {
+                const firstAIAppointment = appointments.find(apt => apt.admin_meta?.source === 'AI_Chatbot');
+                return firstAIAppointment ? ` | 創建日期: ${firstAIAppointment.admin_meta?.created_at}` : '';
+              })()}
+              {chartData.length > 0 && ` | 圖表數據: ${chartData.map(d => `${d.date}:${d.value}`).join(', ')}`}
+              {chartData.length > 0 && ` | 預約創建日期: ${appointments.filter(apt => apt.admin_meta?.source === 'AI_Chatbot').map(apt => apt.admin_meta?.created_at?.split('T')[0]).join(', ')}`}
+              {(() => {
+                const testDate = '2026-05-06';
+                const matches = appointments.filter(apt => {
+                  if (!apt.admin_meta?.created_at || apt.admin_meta?.source !== 'AI_Chatbot') return false;
+                  const createdDateStr = apt.admin_meta.created_at.split('T')[0];
+                  return createdDateStr === testDate;
+                }).length;
+                return ` | 5/6匹配測試: ${matches}`;
+              })()}
+            </div>
             <div className="absolute left-0 top-0 bottom-0 w-5 bg-white z-10" />
             <ResponsiveContainer width="100%" height="100%">
               <AreaChart key={renderKey} data={chartData} margin={{ top: 40, right: 40, left: 0, bottom: 40 }}>
@@ -712,7 +1055,6 @@ export default function DashboardPage() {
                 {/* Main Area Chart */}
                 <Area
                   type="monotone"
-                  data={chartData}
                   dataKey="value"
                   stroke={timePeriod === "7d" ? "url(#lineGradient)" : "#1e293b"}
                   strokeWidth={2}
@@ -808,75 +1150,52 @@ export default function DashboardPage() {
       </div>
 
       {/* ====================
-          🔥 TRENDING KEYWORDS
+          TRENDING KEYWORDS
           ==================== */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-zinc-200">
-        <h2 className="text-lg font-bold text-zinc-900 mb-4">熱門詢問關鍵字</h2>
+        <h2 className="text-lg font-bold text-zinc-900 mb-4">熱門預約項目分析</h2>
         <div className="space-y-5">
-          {/* #1 日式指甲 */}
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 w-16">
-              <span className="text-lg font-bold text-zinc-900">1</span>
-              <Crown className="w-4 h-4 text-amber-500" />
-            </div>
-            <div className="flex-1">
-              <span className="text-zinc-900 font-medium">#日式指甲</span>
-              <div className="h-1.5 bg-gray-100 rounded-full mt-2 overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-gray-300 via-gray-300 to-red-500 rounded-full"></div>
+          {trendingServices.length > 0 ? (
+            trendingServices.map((item, index) => {
+              const maxCount = trendingServices[0]?.count || 1;
+              const percentage = (item.count / maxCount) * 100;
+              const isTop3 = index < 3;
+              
+              return (
+                <div key={item.keyword} className="flex items-center gap-4">
+                  {index === 0 ? (
+                    <div className="flex items-center gap-2 w-16">
+                      <span className="text-lg font-bold text-zinc-900">1</span>
+                      <Crown className="w-4 h-4 text-amber-500" />
+                    </div>
+                  ) : (
+                    <span className={`text-lg font-bold w-16 ${
+                      index === 1 ? 'text-zinc-600' : 'text-zinc-500'
+                    }`}>{index + 1}</span>
+                  )}
+                  <div className="flex-1">
+                    <span className="text-zinc-900 font-medium">#{item.keyword}</span>
+                    <div className="h-1.5 bg-gray-100 rounded-full mt-2 overflow-hidden">
+                      {index === 0 ? (
+                        <div className="h-full bg-gradient-to-r from-gray-300 via-gray-300 to-red-500 rounded-full" style={{ width: '100%' }}></div>
+                      ) : (
+                        <div className="h-full bg-gray-300 rounded-full" style={{ width: `${percentage}%` }}></div>
+                      )}
+                    </div>
+                  </div>
+                  <span className="text-xs text-zinc-500">{item.count} 次預約</span>
+                </div>
+              );
+            })
+          ) : (
+            <div className="text-center py-8">
+              <div className="text-zinc-500 text-sm">
+                目前還沒有預約項目資料！期待開始您的第一筆預約
               </div>
             </div>
-            <span className="text-xs text-zinc-500">42 次詢問</span>
-          </div>
-          
-          {/* #2 漸層色 */}
-          <div className="flex items-center gap-4">
-            <span className="text-lg font-bold text-zinc-600 w-16">2</span>
-            <div className="flex-1">
-              <span className="text-zinc-900 font-medium">#漸層色</span>
-              <div className="h-1.5 bg-gray-100 rounded-full mt-2">
-                <div className="h-full bg-gray-300 rounded-full" style={{ width: '83%' }}></div>
-              </div>
-            </div>
-            <span className="text-xs text-zinc-500">35 次詢問</span>
-          </div>
-          
-          {/* #3 凝膠指甲 */}
-          <div className="flex items-center gap-4">
-            <span className="text-lg font-bold text-zinc-600 w-16">3</span>
-            <div className="flex-1">
-              <span className="text-zinc-900 font-medium">#凝膠指甲</span>
-              <div className="h-1.5 bg-gray-100 rounded-full mt-2">
-                <div className="h-full bg-gray-300 rounded-full" style={{ width: '67%' }}></div>
-              </div>
-            </div>
-            <span className="text-xs text-zinc-500">28 次詢問</span>
-          </div>
-          
-          {/* #4 手繪圖案 */}
-          <div className="flex items-center gap-4">
-            <span className="text-lg font-bold text-zinc-500 w-16">4</span>
-            <div className="flex-1">
-              <span className="text-zinc-900 font-medium">#手繪圖案</span>
-              <div className="h-1.5 bg-gray-100 rounded-full mt-2">
-                <div className="h-full bg-gray-300 rounded-full" style={{ width: '52%' }}></div>
-              </div>
-            </div>
-            <span className="text-xs text-zinc-500">22 次詢問</span>
-          </div>
-          
-          {/* #5 光療指甲 */}
-          <div className="flex items-center gap-4">
-            <span className="text-lg font-bold text-zinc-500 w-16">5</span>
-            <div className="flex-1">
-              <span className="text-zinc-900 font-medium">#光療指甲</span>
-              <div className="h-1.5 bg-gray-100 rounded-full mt-2">
-                <div className="h-full bg-gray-300 rounded-full" style={{ width: '43%' }}></div>
-              </div>
-            </div>
-            <span className="text-xs text-zinc-500">18 次詢問</span>
-          </div>
+          )}
         </div>
-        <p className="text-xs text-zinc-500 mt-4">基於最近 7 天的客戶對話分析</p>
+        <p className="text-xs text-zinc-500 mt-4">基於最近 7 天的預約項目分析</p>
       </div>
     </div>
   );

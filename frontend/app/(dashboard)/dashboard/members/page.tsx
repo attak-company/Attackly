@@ -1,22 +1,33 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Search, Phone, Mail, Calendar, DollarSign, AlertTriangle, Shield, TrendingUp, X, Clock, ArrowLeft, MessageCircle, User } from "lucide-react";
+import { createClient } from "@/lib/supabase";
+import { MessageCircle, Phone, Mail, Calendar, Clock, Tag, User, ChevronDown, Search, Filter, X, Plus, Edit, Trash2, Save, TrendingUp, Shield, AlertTriangle, ArrowLeft } from "lucide-react";
+import { getBookingAIContext } from "@/lib/bookingService";
 import { supabase } from "@/lib/bookingService";
 import { useToast } from "@/hooks/use-toast";
 
 interface Customer {
   id: string;
-  customer_name: string;
+  name: string; // 🔧 V3: 改為 name 欄位
   phone: string;
   email: string | null;
   tags: string[];
-  total_bookings: number;
-  no_show_count: number;
+  total_bookings: number; // 🔧 V3: 從 stats.total_bookings 讀取
+  no_show_count: number; // 🔧 V3: 從 stats.no_show_count 讀取
   is_blacklisted: boolean;
-  total_spending: number;
+  total_spending: number; // 🔧 V3: 從 stats.total_spending 讀取
   created_at: string;
+  last_purchase_at?: string | null;
   manual_notes?: string | null;
+  stats?: { // 🔧 V3: 統計資料結構
+    total_spending: number;
+    total_bookings: number;
+    no_show_count: number;
+  };
+  status?: { // 🚨 新增：黑名單狀態物件
+    is_blacklisted: boolean;
+  };
 }
 
 interface Booking {
@@ -32,6 +43,9 @@ interface Booking {
   ai_notes?: string;
   duration?: number;
   tags?: string[];
+  schedule?: { // 🔧 V3: 新增 schedule 結構
+    start?: string;
+  };
 }
 
 export default function MembersPage() {
@@ -58,8 +72,8 @@ export default function MembersPage() {
     }
     
     const term = searchTerm.toLowerCase();
-    return customers.filter(customer =>
-      customer.customer_name.toLowerCase().includes(term) ||
+    return customers.filter((customer: Customer) =>
+      customer.name.toLowerCase().includes(term) || // 🔧 V3: 改為 name 欄位
       customer.phone.includes(term)
     );
   }, [searchTerm, customers]);
@@ -69,17 +83,34 @@ export default function MembersPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
-      // 使用單一查詢獲取所有客戶資料，包含 last_purchase_at 欄位
-      const { data: customers, error: customersError } = await supabase
-        .from('customers')
-        .select('*')
+      // 🔧 V3: 從 shop_customers_v3 讀取 all_customers JSONB 欄位
+      const { data: customerData, error: customersError } = await supabase
+        .from('shop_customers_v3')
+        .select('all_customers')
         .eq('user_id', user.id)
-        .order('last_purchase_at', { ascending: false, nullsFirst: false })
-        .order('created_at', { ascending: false });
+        .maybeSingle();
 
       if (customersError) throw customersError;
 
-      setCustomers(customers || []);
+      // 🔧 V3: 解析 all_customers JSONB 並映射到 UI 結構
+      const v3Customers = customerData?.all_customers?.map((customer: any) => ({
+        id: customer.id || customer.phone, // 🔧 V3: 優先使用 id，沒有時才用 phone
+        name: customer.name, // 🔧 V3: 從 name 欄位讀取
+        phone: customer.phone,
+        email: customer.email || null,
+        tags: customer.tags || [],
+        total_bookings: customer.stats?.total_bookings || 0, // 🔧 V3: 從 stats 讀取
+        no_show_count: customer.stats?.no_show_count || 0, // 🔧 V3: 從 stats 讀取
+        is_blacklisted: customer.is_blacklisted || false,
+        total_spending: customer.stats?.total_spending || 0, // 🔧 V3: 從 stats 讀取
+        created_at: customer.created_at || new Date().toISOString(),
+        last_purchase_at: customer.last_purchase_at || null,
+        manual_notes: customer.manual_notes || null,
+        stats: customer.stats, // 🔧 V3: 保留原始 stats 結構
+        status: customer.status || { is_blacklisted: customer.is_blacklisted || false } // 🚨 新增：確保 status 物件存在
+      })) || [];
+
+      setCustomers(v3Customers);
     } catch (error) {
       console.error('獲取客戶列表失敗:', error);
       toast({
@@ -92,29 +123,233 @@ export default function MembersPage() {
   };
 
   const toggleBlacklist = async (customerId: string, currentStatus: boolean) => {
-    // 樂觀更新：先更新本地狀態
+    console.log('🔘 [Blacklist Button] 點擊黑名單按鈕:', {
+      customerId,
+      currentStatus,
+      newStatus: !currentStatus
+    });
+    
+    // 🚨 修正：先計算新狀態，避免非同步延遲問題
     const newStatus = !currentStatus;
-    setCustomers(customers.map(c =>
-      c.id === customerId
-        ? { ...c, is_blacklisted: newStatus }
-        : c
-    ));
+    
+    // 🚨 修正：先計算完整的 updatedCustomers 陣列
+    const updatedCustomers = customers.map(c => {
+      if (c.id === customerId) {
+        const currentTags = c.tags || [];
+        let newTags;
+        
+        if (newStatus) {
+          // 加入黑名單：添加 "黑名單" 標籤
+          newTags = currentTags.includes('黑名單') 
+            ? currentTags 
+            : [...currentTags, '黑名單'];
+        } else {
+          // 移除黑名單：移除 "黑名單" 標籤
+          newTags = currentTags.filter((tag: string) => tag !== '黑名單');
+        }
 
-    // 更新選中的客戶（如果正在查看詳情）
+        return { 
+          ...c, 
+          is_blacklisted: newStatus,
+          status: {
+            ...c.status,
+            is_blacklisted: newStatus
+          },
+          tags: newTags
+        };
+      }
+      return c;
+    });
+
+    // 🚨 修正：使用計算好的 updatedCustomers 進行樂觀更新
+    setCustomers(updatedCustomers);
+
+    console.log('🔄 [Blacklist UI] 樂觀更新本地狀態完成:', {
+      customerId,
+      newStatus,
+      updatedCustomers: updatedCustomers.filter(c => c.id === customerId).map(c => ({
+        id: c.id,
+        is_blacklisted: c.is_blacklisted,
+        tags: c.tags
+      }))
+    });
+
+    // 🚨 修正：同時更新 selectedCustomer
     if (selectedCustomer && selectedCustomer.id === customerId) {
-      setSelectedCustomer({
+      const currentTags = selectedCustomer.tags || [];
+      let newTags;
+      
+      if (newStatus) {
+        newTags = currentTags.includes('黑名單') 
+          ? currentTags 
+          : [...currentTags, '黑名單'];
+      } else {
+        newTags = currentTags.filter((tag: string) => tag !== '黑名單');
+      }
+
+      const updatedSelectedCustomer = {
         ...selectedCustomer,
-        is_blacklisted: newStatus
-      });
+        is_blacklisted: newStatus,
+        status: {
+          ...selectedCustomer.status,
+          is_blacklisted: newStatus
+        },
+        tags: newTags
+      };
+      
+      setSelectedCustomer(updatedSelectedCustomer);
     }
 
     try {
-      const { error } = await supabase
-        .from('customers')
-        .update({ is_blacklisted: newStatus })
-        .eq('id', customerId);
+      // 🔧 V3: 獲取當前用戶
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({
+          title: "認證失敗",
+          description: "無法識別用戶身份"
+        });
+        return;
+      }
 
-      if (error) throw error;
+      // 🔧 V3: 更新 shop_customers_v3 的 all_customers JSONB
+      const { data: currentData } = await supabase
+        .from('shop_customers_v3')
+        .select('all_customers')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (!currentData?.all_customers) {
+        throw new Error('找不到客戶資料');
+      }
+
+      // 🚨 修正：強制同步所有狀態欄位 - 全彈同步
+      const dbUpdatedCustomers = currentData.all_customers.map((customer: any) => {
+        if (customer.id === customerId) {
+          const currentTags = customer.tags || [];
+          let newTags;
+          
+          if (newStatus) {
+            // 🚨 加入黑名單：確保三個地方都有黑名單資訊
+            newTags = currentTags.includes('黑名單') 
+              ? currentTags 
+              : [...currentTags, '黑名單'];
+          } else {
+            // 🚨 移除黑名單：確保三個地方都移除黑名單資訊
+            newTags = currentTags.filter((tag: string) => tag !== '黑名單');
+          }
+
+          return { 
+            ...customer, 
+            is_blacklisted: newStatus, // 🚨 根層級同步
+            status: {
+              ...customer.status,
+              is_blacklisted: newStatus // 🚨 status 物件同步
+            },
+            tags: newTags // 🚨 tags 陣列同步
+          };
+        }
+        return customer;
+      });
+
+      console.log('📝 [Blacklist Update] 準備更新資料庫:', {
+        customerId,
+        newStatus,
+        updatedCustomerCount: dbUpdatedCustomers.filter(c => c.id === customerId).length,
+        // 🚨 調試：檢查三重同步狀態
+        targetCustomer: dbUpdatedCustomers.find(c => c.id === customerId)
+      });
+
+      const { error } = await supabase
+        .from('shop_customers_v3')
+        .update({ all_customers: dbUpdatedCustomers })
+        .eq('user_id', user.id);
+
+      if (error) {
+        console.error('❌ [Blacklist Update] 資料庫更新失敗:', error);
+        throw error;
+      }
+
+      console.log('✅ [Blacklist Update] 資料庫更新成功:', {
+        customerId,
+        newStatus,
+        message: !currentStatus ? "已加入黑名單" : "已移除黑名單"
+      });
+
+      // � 降魔咒：資料源頭連鎖反應 - 同步更新所有預約記錄
+      try {
+        console.log('🔗 [Cascade Update] 開始同步更新所有預約記錄...');
+        
+        // 獲取目標客戶的電話號碼
+        const targetCustomer = dbUpdatedCustomers.find(c => c.id === customerId);
+        if (!targetCustomer?.phone) {
+          console.warn('⚠️ [Cascade Update] 找不到客戶電話號碼，跳過預約同步');
+        } else {
+          // 查詢所有相關預約
+          const { data: bookingData, error: bookingError } = await supabase
+            .from('shop_bookings_v3')
+            .select('all_bookings')
+            .eq('user_id', user.id)
+            .maybeSingle();
+
+          if (bookingError) {
+            console.error('❌ [Cascade Update] 查詢預約記錄失敗:', bookingError);
+          } else if (bookingData?.all_bookings) {
+            // 🚨 強制注入標籤：更新所有相關預約的 admin_meta.tags
+            const updatedBookings = bookingData.all_bookings.map((booking: any) => {
+              if (booking.customer_phone === targetCustomer.phone) {
+                const currentTags = booking.admin_meta?.tags || [];
+                let newTags;
+                
+                if (newStatus) {
+                  // 加入黑名單：添加 "黑名單" 標籤
+                  newTags = currentTags.includes('黑名單') 
+                    ? currentTags 
+                    : [...currentTags, '黑名單'];
+                } else {
+                  // 移除黑名單：移除 "黑名單" 標籤
+                  newTags = currentTags.filter((tag: string) => tag !== '黑名單');
+                }
+
+                return {
+                  ...booking,
+                  admin_meta: {
+                    ...booking.admin_meta,
+                    tags: newTags
+                  }
+                };
+              }
+              return booking;
+            });
+
+            // 更新預約記錄
+            const { error: updateBookingError } = await supabase
+              .from('shop_bookings_v3')
+              .update({ all_bookings: updatedBookings })
+              .eq('user_id', user.id);
+
+            if (updateBookingError) {
+              console.error('❌ [Cascade Update] 更新預約記錄失敗:', updateBookingError);
+            } else {
+              console.log('✅ [Cascade Update] 預約記錄同步成功:', {
+                customerPhone: targetCustomer.phone,
+                updatedBookingCount: updatedBookings.filter(b => b.customer_phone === targetCustomer.phone).length,
+                blacklistStatus: newStatus
+              });
+            }
+          }
+        }
+      } catch (cascadeError) {
+        console.error('❌ [Cascade Update] 連鎖更新過程出錯:', cascadeError);
+      }
+
+      // �🔔 通知其他頁面黑名單已更新
+      window.dispatchEvent(new CustomEvent('blacklistUpdated', {
+        detail: {
+          customerId,
+          isBlacklisted: newStatus,
+          timestamp: Date.now()
+        }
+      }));
 
       toast({
         title: !currentStatus ? "已加入黑名單" : "已移除黑名單",
@@ -150,18 +385,70 @@ export default function MembersPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
 
+      // 🔧 防呆檢查：確保 customerPhone 不是 undefined
+      if (!customerPhone) {
+        console.warn('⚠️ [Members] customerPhone 為空，跳過載入預約紀錄');
+        setCustomerBookings([]);
+        return;
+      }
+
       const normalizedPhone = customerPhone.replace(/[^\d]/g, '');
+      // 從 V3 讀取 all_bookings 並過濾電話
       const { data, error } = await supabase
-        .from('bookings')
-        .select('*')
+        .from('shop_bookings_v3')
+        .select('all_bookings')
         .eq('user_id', user.id)
-        .eq('phone', normalizedPhone)
-        .eq('is_deleted', false)
-        .order('date', { ascending: false })
-        .order('time', { ascending: false });
+        .maybeSingle();
 
       if (error) throw error;
-      setCustomerBookings(data || []);
+      
+      // 過濾電話和未刪除的預約（V3 結構）
+      const filteredBookings = data?.all_bookings?.filter((booking: any) => {
+        // 🔧 防呆檢查：確保 booking.customer_phone 存在
+        if (!booking.customer_phone) return false;
+        const bookingPhone = booking.customer_phone.replace(/[^\d]/g, '') || '';
+        return bookingPhone === normalizedPhone && booking.status !== 'cancelled';
+      }) || [];
+      
+      // 🔧 V3 時間解析：使用統一的 getTimeFromSchedule 邏輯
+      const getTimeFromSchedule = (booking: any): string => {
+        // 優先讀取 schedule.start (ISO 字串)
+        if (booking.schedule?.start) {
+          try {
+            const timeStr = new Date(booking.schedule.start).toLocaleTimeString('zh-TW', { 
+              hour: '2-digit', 
+              minute: '2-digit' 
+            });
+            return timeStr;
+          } catch (error) {
+            console.warn('⚠️ [Members] schedule.start 解析失敗:', error);
+          }
+        }
+        
+        // 次選：讀取 start_time 欄位（兼容舊資料）
+        if (booking.start_time) {
+          try {
+            const timeStr = booking.start_time.split(' ')[1];
+            return timeStr ? timeStr.substring(0, 5) : '00:00';
+          } catch (error) {
+            console.warn('⚠️ [Members] start_time 解析失敗:', error);
+          }
+        }
+        
+        return '00:00';
+      };
+
+      // 按日期和時間排序（使用 V3 統一邏輯）
+      filteredBookings.sort((a: any, b: any) => {
+        const dateCompare = b.date?.localeCompare(a.date || '') || 0;
+        if (dateCompare !== 0) return dateCompare;
+        
+        const timeA = getTimeFromSchedule(a);
+        const timeB = getTimeFromSchedule(b);
+        return timeB.localeCompare(timeA);
+      });
+      
+      setCustomerBookings(filteredBookings);
     } catch (error) {
       console.error('獲取客戶預約紀錄失敗:', error);
       toast({
@@ -195,10 +482,38 @@ export default function MembersPage() {
 
     setIsSavingNotes(true);
     try {
+      // 🔧 V3: 獲取當前用戶
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({
+          title: "認證失敗",
+          description: "無法識別用戶身份"
+        });
+        return;
+      }
+
+      // 🔧 V3: 更新 shop_customers_v3 的 all_customers JSONB
+      const { data: currentData } = await supabase
+        .from('shop_customers_v3')
+        .select('all_customers')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (!currentData?.all_customers) {
+        throw new Error('找不到客戶資料');
+      }
+
+      // 更新指定客戶的手動備註
+      const updatedCustomers = currentData.all_customers.map((customer: any) =>
+        customer.id === selectedCustomer.id
+          ? { ...customer, manual_notes: manualNotes }
+          : customer
+      );
+
       const { error } = await supabase
-        .from('customers')
-        .update({ manual_notes: manualNotes })
-        .eq('id', selectedCustomer.id);
+        .from('shop_customers_v3')
+        .update({ all_customers: updatedCustomers })
+        .eq('user_id', user.id);
 
       if (error) throw error;
 
@@ -240,6 +555,16 @@ export default function MembersPage() {
   const handleAddTag = async (tag: string) => {
     if (!selectedCustomer) return;
 
+    // 🔧 V3: 獲取當前用戶
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) {
+      toast({
+        title: "認證失敗",
+        description: "無法識別用戶身份"
+      });
+      return;
+    }
+
     const currentTags = selectedCustomer.tags || [];
     if (currentTags.includes(tag)) {
       toast({
@@ -264,10 +589,28 @@ export default function MembersPage() {
     ));
 
     try {
+      // 🔧 V3: 更新 shop_customers_v3 的 all_customers JSONB
+      const { data: currentData } = await supabase
+        .from('shop_customers_v3')
+        .select('all_customers')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (!currentData?.all_customers) {
+        throw new Error('找不到客戶資料');
+      }
+
+      // 更新指定客戶的標籤
+      const updatedCustomers = currentData.all_customers.map((customer: any) =>
+        customer.id === selectedCustomer.id
+          ? { ...customer, tags: newTags }
+          : customer
+      );
+
       const { error } = await supabase
-        .from('customers')
-        .update({ tags: newTags })
-        .eq('id', selectedCustomer.id);
+        .from('shop_customers_v3')
+        .update({ all_customers: updatedCustomers })
+        .eq('user_id', user.id);
 
       if (error) throw error;
       
@@ -297,11 +640,40 @@ export default function MembersPage() {
     if (!selectedCustomer) return;
 
     try {
+      // 🔧 V3: 獲取當前用戶
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        toast({
+          title: "認證失敗",
+          description: "無法識別用戶身份"
+        });
+        return;
+      }
+
+      // 🔧 V3: 更新 shop_customers_v3 的 all_customers JSONB
+      const { data: currentData } = await supabase
+        .from('shop_customers_v3')
+        .select('all_customers')
+        .eq('user_id', user.id)
+        .maybeSingle();
+
+      if (!currentData?.all_customers) {
+        throw new Error('找不到客戶資料');
+      }
+
       const newTags = (selectedCustomer.tags || []).filter(tag => tag !== tagToRemove);
+      
+      // 更新指定客戶的標籤
+      const updatedCustomers = currentData.all_customers.map((customer: any) =>
+        customer.id === selectedCustomer.id
+          ? { ...customer, tags: newTags }
+          : customer
+      );
+
       const { error } = await supabase
-        .from('customers')
-        .update({ tags: newTags })
-        .eq('id', selectedCustomer.id);
+        .from('shop_customers_v3')
+        .update({ all_customers: updatedCustomers })
+        .eq('user_id', user.id);
 
       if (error) throw error;
 
@@ -448,11 +820,12 @@ export default function MembersPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {filteredCustomers.map((customer) => (
+              {filteredCustomers.map((customer: Customer) => (
                 <div
                   key={customer.id}
                   className={`p-5 bg-white border rounded-xl shadow-sm hover:shadow-md transition-all ${
-                    customer.is_blacklisted
+                    // 🚨 修正：統一判斷黑名單狀態 - 檢查三個地方
+                    (customer.is_blacklisted || customer.tags?.includes('黑名單') || customer.status?.is_blacklisted)
                       ? "border-2 border-red-500 bg-red-50/30"
                       : "border-slate-100"
                   }`}
@@ -465,8 +838,9 @@ export default function MembersPage() {
                       </div>
                       <div>
                         <div className="flex items-center gap-2">
-                          <h3 className="text-lg font-bold text-[#1A1A1A]">{customer.customer_name}</h3>
-                          {customer.is_blacklisted && (
+                          <h3 className="text-lg font-bold text-[#1A1A1A]">{customer.name}</h3>
+                          {/* 🚨 修正：統一判斷黑名單標籤顯示 */}
+                          {(customer.is_blacklisted || customer.tags?.includes('黑名單') || customer.status?.is_blacklisted) && (
                             <span className="text-xs bg-red-500 text-white px-2 py-0.5 rounded-full font-medium flex items-center gap-1">
                               <AlertTriangle className="w-3 h-3" />
                               黑名單
@@ -482,7 +856,7 @@ export default function MembersPage() {
                         )}
                         {customer.tags && customer.tags.length > 0 && (
                           <div className="flex items-center gap-1 mt-2">
-                            {customer.tags.map((tag, index) => (
+                            {customer.tags.map((tag: string, index: number) => (
                               <span key={index} className="text-xs bg-gray-100 text-gray-600 px-2 py-0.5 rounded">
                                 {tag}
                               </span>
@@ -521,12 +895,14 @@ export default function MembersPage() {
                       <button
                         onClick={() => toggleBlacklist(customer.id, customer.is_blacklisted)}
                         className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-                          customer.is_blacklisted
+                          // 🚨 修正：統一判斷按鈕狀態
+                          (customer.is_blacklisted || customer.tags?.includes('黑名單') || customer.status?.is_blacklisted)
                             ? "bg-green-500 text-white hover:bg-green-600"
                             : "bg-red-500 text-white hover:bg-red-600"
                         }`}
                       >
-                        {customer.is_blacklisted ? "移除黑名單" : "加入黑名單"}
+                        {/* 🚨 修正：統一判斷按鈕文字 */}
+                        {(customer.is_blacklisted || customer.tags?.includes('黑名單') || customer.status?.is_blacklisted) ? "移除黑名單" : "加入黑名單"}
                       </button>
                     </div>
                   </div>
@@ -551,7 +927,7 @@ export default function MembersPage() {
                   <ArrowLeft className="w-5 h-5 text-[#1A1A1A]" />
                 </button>
                 <div>
-                  <h2 className="text-xl font-bold text-[#1A1A1A]">{selectedCustomer.customer_name}</h2>
+                  <h2 className="text-xl font-bold text-[#1A1A1A]">{selectedCustomer.name}</h2>
                   <p className="text-sm text-[#9CA3AF]">{selectedCustomer.phone}</p>
                 </div>
               </div>
@@ -566,7 +942,7 @@ export default function MembersPage() {
             {/* Modal Content */}
             <div className="p-6 overflow-y-auto flex-1 min-h-0">
               {/* 客戶統計 */}
-              <div className="grid grid-cols-3 gap-4 mb-6">
+              <div className="grid grid-cols-2 gap-4 mb-6">
                 <div className="bg-[#F4F4F5] rounded-xl p-4">
                   <p className="text-xs text-[#9CA3AF] mb-1">總消費</p>
                   <p className="text-2xl font-bold text-[#1A1A1A]">{formatCurrency(selectedCustomer.total_spending || 0)}</p>
@@ -575,10 +951,23 @@ export default function MembersPage() {
                   <p className="text-xs text-[#9CA3AF] mb-1">預約次數</p>
                   <p className="text-2xl font-bold text-[#1A1A1A]">{selectedCustomer.total_bookings}</p>
                 </div>
+              </div>
+              
+              {/* 第二行統計 */}
+              <div className="grid grid-cols-2 gap-4 mb-6">
                 <div className="bg-[#F4F4F5] rounded-xl p-4">
                   <p className="text-xs text-[#9CA3AF] mb-1">爽約次數</p>
                   <p className={`text-2xl font-bold ${selectedCustomer.no_show_count > 0 ? 'text-red-500' : 'text-[#1A1A1A]'}`}>
                     {selectedCustomer.no_show_count}
+                  </p>
+                </div>
+                <div className="bg-[#F4F4F5] rounded-xl p-4">
+                  <p className="text-xs text-[#9CA3AF] mb-1">最後消費</p>
+                  <p className="text-lg font-bold text-[#1A1A1A]">
+                    {selectedCustomer.last_purchase_at 
+                      ? new Date(selectedCustomer.last_purchase_at).toLocaleDateString('zh-TW')
+                      : '無紀錄'
+                    }
                   </p>
                 </div>
               </div>
@@ -740,7 +1129,15 @@ export default function MembersPage() {
                         </div>
                         <div className="flex items-center gap-4 text-sm text-[#9CA3AF]">
                           <span>{booking.date}</span>
-                          <span>{booking.time}</span>
+                          <span>
+                            {booking.schedule?.start 
+                              ? new Date(booking.schedule.start).toLocaleTimeString('zh-TW', { 
+                                  hour: '2-digit', 
+                                  minute: '2-digit' 
+                                })
+                              : booking.time || '00:00'
+                            }
+                          </span>
                           {booking.duration && <span>{booking.duration}分鐘</span>}
                         </div>
                         {booking.ai_notes && (

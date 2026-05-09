@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import { Key, Save, Copy, Check, Bot, Plus, X, Store, MapPin, Phone, Building2, Package, FileText, User, Database, Eye, EyeOff, Pen, Calendar, CalendarClock, ExternalLink, MoreHorizontal, Headphones, BookOpen, Bell, Play } from "lucide-react";
+import { Key, Save, Copy, Check, Bot, Plus, X, Store, MapPin, Phone, Building2, Package, FileText, User, Database, Eye, EyeOff, Pen, Calendar, CalendarClock, ExternalLink, MoreHorizontal, Headphones, BookOpen, Bell, Play, Clock, Loader2 } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 
 type MainTabType = 'account' | 'basic' | 'third_party' | 'ai' | 'other';
@@ -130,6 +130,17 @@ export default function SettingsPage() {
   ]);
   const [businessHoursSaving, setBusinessHoursSaving] = useState(false);
   const [businessHoursSaveSuccess, setBusinessHoursSaveSuccess] = useState(false);
+
+  // Booking Rules Settings
+  const [bookingRules, setBookingRules] = useState({
+    min_lead_time: 2,
+    max_future_days: 30,
+    auto_accept: true,
+    buffer_time: 15
+  });
+  const [bookingSaving, setBookingSaving] = useState(false);
+  const [bookingSaveSuccess, setBookingSaveSuccess] = useState(false);
+
   const [serviceSaving, setServiceSaving] = useState(false);
   const [serviceSaveSuccess, setServiceSaveSuccess] = useState(false);
   const [editingServiceId, setEditingServiceId] = useState<string | null>(null);
@@ -228,7 +239,7 @@ export default function SettingsPage() {
           // Fetch settings from settings table
           const { data: settingsData, error: settingsError } = await supabase
             .from('settings')
-            .select('store_setting, employee_settings, service_settings, time_settings')
+            .select('store_setting, employee_settings, service_settings, time_settings, booking_rules')
             .eq('user_id', user.id)
             .single();
 
@@ -297,6 +308,11 @@ export default function SettingsPage() {
           // Load time settings from settings table
           if (settingsData && settingsData.time_settings) {
             setBusinessHours(settingsData.time_settings);
+          }
+
+          // Load booking rules from settings table
+          if (settingsData && settingsData.booking_rules) {
+            setBookingRules(settingsData.booking_rules);
           }
         }
       } catch (error) {
@@ -746,6 +762,62 @@ export default function SettingsPage() {
 
   const isBusinessHoursValid = () => {
     return businessHours.every(day => day.isClosed || day.timeSlots.length > 0);
+  };
+
+  const updateBookingRule = (field: string, value: any) => {
+    let processedValue = value;
+    
+    // 數字型態防呆
+    if (field === 'min_lead_time') {
+      processedValue = Math.max(0, Math.min(72, parseInt(value) || 0));
+    } else if (field === 'max_future_days') {
+      processedValue = Math.max(1, Math.min(90, parseInt(value) || 1));
+    }
+    
+    setBookingRules(prev => ({
+      ...prev,
+      [field]: processedValue
+    }));
+  };
+
+  const handleBookingRulesSave = async () => {
+    setBookingSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+
+      // Check if settings record exists for this user
+      const { data: existingSettings } = await supabase
+        .from('settings')
+        .select('user_id')
+        .eq('user_id', user.id)
+        .single();
+
+      let error;
+      if (existingSettings) {
+        // Update existing record
+        const result = await supabase
+          .from('settings')
+          .update({ booking_rules: bookingRules })
+          .eq('user_id', user.id);
+        error = result.error;
+      } else {
+        // Insert new record
+        const result = await supabase
+          .from('settings')
+          .insert({ user_id: user.id, booking_rules: bookingRules });
+        error = result.error;
+      }
+
+      if (error) throw error;
+      setBookingSaveSuccess(true);
+      setTimeout(() => setBookingSaveSuccess(false), 2000);
+    } catch (error: any) {
+      console.error("Error saving booking rules:", error);
+      alert("儲存失敗：" + error.message);
+    } finally {
+      setBookingSaving(false);
+    }
   };
 
   const addCategory = async () => {
@@ -2691,8 +2763,78 @@ export default function SettingsPage() {
               <Calendar className="w-5 h-5 text-black mr-2" />
               <h3 className="font-bold text-lg text-gray-900">預約設定</h3>
             </div>
-            <div className="bg-white border border-gray-200 rounded-lg p-6">
-              <p className="text-gray-600">預約設定功能開發中...</p>
+
+            {/* 預約規則設定區塊 */}
+            <div className="space-y-6 bg-white p-6 rounded-xl border border-gray-200">
+              <div className="flex items-center mb-4">
+                <Clock className="w-5 h-5 text-black mr-2" />
+                <h3 className="font-bold text-lg text-gray-900">預約規則設定</h3>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* 1. 預約提前量 */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">最晚預約限制 (預約提前量)</label>
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="number" 
+                      value={bookingRules.min_lead_time}
+                      onChange={(e) => setBookingRules({...bookingRules, min_lead_time: parseInt(e.target.value)})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-black outline-none"
+                    />
+                    <span className="text-sm text-gray-500 whitespace-nowrap">小時前</span>
+                  </div>
+                </div>
+
+                {/* 2. 開放預約區間 */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">開放預約天數 (預約區間)</label>
+                  <div className="flex items-center gap-2">
+                    <input 
+                      type="number" 
+                      value={bookingRules.max_future_days}
+                      onChange={(e) => setBookingRules({...bookingRules, max_future_days: parseInt(e.target.value)})}
+                      className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-black outline-none"
+                    />
+                    <span className="text-sm text-gray-500 whitespace-nowrap">天內</span>
+                  </div>
+                </div>
+
+                {/* 3. 預約緩衝時間 */}
+                <div className="space-y-2">
+                  <label className="text-sm font-medium text-gray-700">兩筆預約間隔 (緩衝時間)</label>
+                  <select 
+                    value={bookingRules.buffer_time}
+                    onChange={(e) => setBookingRules({...bookingRules, buffer_time: parseInt(e.target.value)})}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-black outline-none"
+                  >
+                    <option value={0}>無間隔</option>
+                    <option value={15}>15 分鐘</option>
+                    <option value={30}>30 分鐘</option>
+                  </select>
+                </div>
+
+                {/* 4. 自動審核開關 */}
+                <div className="flex items-center justify-between p-4 bg-gray-50 rounded-lg border border-gray-100">
+                  <div>
+                    <p className="font-medium text-gray-900">自動審核預約</p>
+                    <p className="text-xs text-gray-500">開啟後，AI 預約將直接成立無需手動確認</p>
+                  </div>
+                  <input 
+                    type="checkbox" 
+                    checked={bookingRules.auto_accept}
+                    onChange={(e) => setBookingRules({...bookingRules, auto_accept: e.target.checked})}
+                    className="w-5 h-5 accent-black"
+                  />
+                </div>
+              </div>
+
+              <button 
+                onClick={handleBookingRulesSave}
+                className="w-full mt-4 bg-black text-white py-2 rounded-lg font-bold hover:bg-gray-800 transition-all"
+              >
+                儲存預約規則
+              </button>
             </div>
           </div>
         )}
