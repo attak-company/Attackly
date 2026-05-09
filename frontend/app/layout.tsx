@@ -9,7 +9,7 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://digitalmanager.ai'),
-  title: "Digital Manager - AI 數位店長",
+  title: "Attakly",
   description: "讓商家用0技術，擁有會接單、會排程、會成交的AI客服。整合 Gemini 核心，深度學習您的價目表與知識庫，實現真正的零人力運營。",
   keywords: "AI客服, 數位店長, 自動排程, LINE客服, 商業自動化",
   authors: [{ name: "Digital Manager" }],
@@ -24,7 +24,7 @@ export const metadata: Metadata = {
     type: "website",
     locale: "zh_TW",
     url: "https://digitalmanager.ai",
-    title: "Digital Manager - AI 數位店長",
+    title: "Attakly",
     description: "讓商家用0技術，擁有會接單、會排程、會成交的AI客服",
     siteName: "Digital Manager",
     images: [
@@ -38,7 +38,7 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Digital Manager - AI 數位店長",
+    title: "Attakly",
     description: "讓商家用0技術，擁有會接單、會排程、會成交的AI客服",
     images: ["/Logo.png"],
     creator: "@digitalmanager",
