@@ -25,8 +25,18 @@ export function Header() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (user) {
-          // 直接使用 auth 用戶數據，不查詢 users 表
-          setUsername(user.email?.split('@')[0] || "用戶");
+          console.log("Auth user:", user);
+          // Fetch username from users table
+          const { data: userData, error } = await supabase
+            .from('users')
+            .select('username')
+            .eq('id', user.id)
+            .single();
+
+          console.log("User data from users table:", userData);
+          console.log("Error fetching user data:", error);
+
+          setUsername(userData?.username || user.email?.split('@')[0] || "用戶");
           setAiEnabled(true);
         }
       } catch (error) {
@@ -80,7 +90,7 @@ export function Header() {
               <span className="text-lg font-black tracking-tighter leading-tight">ATTAKLY</span>
               <span className="w-1.5 h-1.5 bg-red-500 rounded-full mb-1"></span>
             </div>
-            <span className="text-xs text-gray-400 tracking-wide">數位店長</span>
+            <span className="text-xs text-gray-400 tracking-wide">您的AI數位店長</span>
           </div>
         </div>
 

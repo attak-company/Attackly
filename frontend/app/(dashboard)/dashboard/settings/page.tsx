@@ -6,7 +6,7 @@ import { Key, Save, Copy, Check, Bot, Plus, X, Store, MapPin, Phone, Building2, 
 import { createClient } from "@/lib/supabase";
 
 type MainTabType = 'account' | 'basic' | 'third_party' | 'ai' | 'other';
-type SubTabType = 'line' | 'ai_agent' | 'store' | 'services' | 'faq' | 'staff' | 'appointment' | 'booking_settings' | 'notification' | 'support' | 'manual';
+type SubTabType = 'line' | 'ai_agent' | 'store' | 'services' | 'faq' | 'staff' | 'booking_settings' | 'notification' | 'support' | 'manual';
 
 export default function SettingsPage() {
   const searchParams = useSearchParams();
@@ -119,18 +119,6 @@ export default function SettingsPage() {
   const [serviceItems, setServiceItems] = useState<Array<{ id: string; name: string; description: string; price: number; duration: number; category: string }>>([]);
 
   // Business Hours Settings
-  const [businessHours, setBusinessHours] = useState<Array<{ day: string; isClosed: boolean; timeSlots: Array<{ id: string; startTime: string; endTime: string }> }>>([
-    { day: '週一', isClosed: false, timeSlots: [{ id: '1', startTime: '09:00', endTime: '18:00' }] },
-    { day: '週二', isClosed: false, timeSlots: [{ id: '1', startTime: '09:00', endTime: '18:00' }] },
-    { day: '週三', isClosed: false, timeSlots: [{ id: '1', startTime: '09:00', endTime: '18:00' }] },
-    { day: '週四', isClosed: false, timeSlots: [{ id: '1', startTime: '09:00', endTime: '18:00' }] },
-    { day: '週五', isClosed: false, timeSlots: [{ id: '1', startTime: '09:00', endTime: '18:00' }] },
-    { day: '週六', isClosed: true, timeSlots: [] },
-    { day: '週日', isClosed: true, timeSlots: [] },
-  ]);
-  const [businessHoursSaving, setBusinessHoursSaving] = useState(false);
-  const [businessHoursSaveSuccess, setBusinessHoursSaveSuccess] = useState(false);
-
   // Booking Rules Settings
   const [bookingRules, setBookingRules] = useState({
     min_lead_time: 2,
@@ -239,7 +227,7 @@ export default function SettingsPage() {
           // Fetch settings from settings table
           const { data: settingsData, error: settingsError } = await supabase
             .from('settings')
-            .select('store_setting, employee_settings, service_settings, time_settings, booking_rules')
+            .select('store_setting, employee_settings, service_settings, booking_rules')
             .eq('user_id', user.id)
             .single();
 
@@ -303,11 +291,6 @@ export default function SettingsPage() {
               storeDescription: storeSetting.store_description || '',
               storeLocationImage: storeSetting.store_location_image || ''
             });
-          }
-
-          // Load time settings from settings table
-          if (settingsData && settingsData.time_settings) {
-            setBusinessHours(settingsData.time_settings);
           }
 
           // Load booking rules from settings table
@@ -681,87 +664,6 @@ export default function SettingsPage() {
     } finally {
       setStaffSaving(false);
     }
-  };
-
-  // Business Hours Handlers
-  const toggleDayClosed = (dayIndex: number) => {
-    setBusinessHours(businessHours.map((day, index) =>
-      index === dayIndex ? { ...day, isClosed: !day.isClosed, timeSlots: day.isClosed ? [{ id: Date.now().toString(), startTime: '09:00', endTime: '18:00' }] : [] } : day
-    ));
-  };
-
-  const addTimeSlot = (dayIndex: number) => {
-    setBusinessHours(businessHours.map((day, index) =>
-      index === dayIndex ? { ...day, timeSlots: [...day.timeSlots, { id: Date.now().toString(), startTime: '09:00', endTime: '18:00' }] } : day
-    ));
-  };
-
-  const removeTimeSlot = (dayIndex: number, slotId: string) => {
-    setBusinessHours(businessHours.map((day, index) =>
-      index === dayIndex ? {
-        ...day,
-        timeSlots: day.timeSlots.filter(slot => slot.id !== slotId),
-        isClosed: day.timeSlots.filter(slot => slot.id !== slotId).length === 0
-      } : day
-    ));
-  };
-
-  const updateTimeSlot = (dayIndex: number, slotId: string, field: 'startTime' | 'endTime', value: string) => {
-    setBusinessHours(businessHours.map((day, index) =>
-      index === dayIndex ? {
-        ...day,
-        timeSlots: day.timeSlots.map(slot =>
-          slot.id === slotId ? { ...slot, [field]: value } : slot
-        )
-      } : day
-    ));
-  };
-
-  const handleBusinessHoursSave = async () => {
-    setBusinessHoursSaving(true);
-    setBusinessHoursSaveSuccess(false);
-
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) throw new Error("User not authenticated");
-
-      // Check if settings record exists for this user
-      const { data: existingSettings } = await supabase
-        .from('settings')
-        .select('user_id')
-        .eq('user_id', user.id)
-        .single();
-
-      let error;
-      if (existingSettings) {
-        // Update existing record
-        const result = await supabase
-          .from('settings')
-          .update({ time_settings: businessHours })
-          .eq('user_id', user.id);
-        error = result.error;
-      } else {
-        // Insert new record
-        const result = await supabase
-          .from('settings')
-          .insert({ user_id: user.id, time_settings: businessHours });
-        error = result.error;
-      }
-
-      if (error) throw error;
-
-      setBusinessHoursSaveSuccess(true);
-      setTimeout(() => setBusinessHoursSaveSuccess(false), 2000);
-    } catch (error: any) {
-      console.error("Error saving business hours:", error);
-      alert("儲存失敗：" + error.message);
-    } finally {
-      setBusinessHoursSaving(false);
-    }
-  };
-
-  const isBusinessHoursValid = () => {
-    return businessHours.every(day => day.isClosed || day.timeSlots.length > 0);
   };
 
   const updateBookingRule = (field: string, value: any) => {
@@ -1389,7 +1291,6 @@ export default function SettingsPage() {
       { id: 'store' as SubTabType, label: '店家設定', icon: Store },
       { id: 'staff' as SubTabType, label: '員工設定', icon: User },
       { id: 'services' as SubTabType, label: '服務設定', icon: Package },
-      { id: 'appointment' as SubTabType, label: '營業設定', icon: Calendar },
       { id: 'booking_settings' as SubTabType, label: '預約設定', icon: CalendarClock },
     ],
     third_party: [
@@ -2679,81 +2580,6 @@ export default function SettingsPage() {
                 </div>
               </>
             )}
-          </div>
-        )}
-
-        {activeMainTab === 'basic' && activeSubTab === 'appointment' && (
-          <div className="space-y-6">
-            <div className="flex items-center mb-4">
-              <Calendar className="w-5 h-5 text-black mr-2" />
-              <h3 className="font-bold text-lg text-gray-900">營業設定</h3>
-            </div>
-            <div className="space-y-4">
-              {businessHours.map((day, dayIndex) => (
-                <div key={day.day} className="border border-gray-200 rounded-lg p-4">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <span className="font-medium text-gray-900 w-12">{day.day}</span>
-                      <label className="flex items-center gap-2 cursor-pointer">
-                        <div className="relative">
-                          <input
-                            type="checkbox"
-                            checked={day.isClosed}
-                            onChange={() => toggleDayClosed(dayIndex)}
-                            className="sr-only peer"
-                          />
-                          <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-2 peer-focus:ring-black rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-black"></div>
-                        </div>
-                        <span className="text-sm text-gray-600">整日不營業</span>
-                      </label>
-                    </div>
-                  </div>
-                  {!day.isClosed && (
-                    <div className="space-y-2 ml-15">
-                      {day.timeSlots.map((slot, slotIndex) => (
-                        <div key={slot.id} className="flex items-center gap-2">
-                          <input
-                            type="time"
-                            value={slot.startTime}
-                            onChange={(e) => updateTimeSlot(dayIndex, slot.id, 'startTime', e.target.value)}
-                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:outline-none"
-                          />
-                          <span className="text-gray-500">至</span>
-                          <input
-                            type="time"
-                            value={slot.endTime}
-                            onChange={(e) => updateTimeSlot(dayIndex, slot.id, 'endTime', e.target.value)}
-                            className="px-3 py-2 border border-gray-300 rounded-lg text-sm text-gray-900 focus:ring-2 focus:outline-none"
-                          />
-                          <button
-                            onClick={() => removeTimeSlot(dayIndex, slot.id)}
-                            className="text-red-500 hover:text-red-700 transition-colors"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ))}
-                      <button
-                        onClick={() => addTimeSlot(dayIndex)}
-                        className="text-sm text-black hover:text-gray-700 transition-colors flex items-center gap-1"
-                      >
-                        <Plus className="w-4 h-4" />
-                        新增時段
-                      </button>
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-            <div className="flex justify-end pt-4 mt-4 border-t border-gray-200">
-              <button
-                onClick={handleBusinessHoursSave}
-                disabled={businessHoursSaving || !isBusinessHoursValid()}
-                className="flex items-center gap-2 bg-black text-white px-6 py-2.5 rounded-lg font-bold hover:bg-gray-800 transition-all disabled:bg-gray-400 disabled:cursor-not-allowed"
-              >
-                {businessHoursSaving ? '儲存中...' : businessHoursSaveSuccess ? <><Check className="w-4 h-4" />已儲存</> : <><Save className="w-4 h-4" />儲存</>}
-              </button>
-            </div>
           </div>
         )}
 
