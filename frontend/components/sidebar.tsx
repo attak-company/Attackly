@@ -46,11 +46,11 @@ export function Sidebar() {
               )}
             >
               {isActive && (
-                <div className="absolute left-[-13px] top-1/2 -translate-y-1/2 w-[3px] h-4 bg-[#6366f1] rounded-sm" />
+                <div className="absolute left-[-13px] top-1/2 -translate-y-1/2 w-[3px] h-4 bg-[#ef4444] rounded-sm" />
               )}
               <item.icon className={cn(
                 "w-5 h-5 mr-3 text-center",
-                isActive ? "text-[#6366f1]" : "text-[#495057] group-hover:text-[#212529]"
+                isActive ? "text-[#ef4444]" : "text-[#495057] group-hover:text-[#212529]"
               )} />
               {item.label}
             </Link>
@@ -70,11 +70,11 @@ export function Sidebar() {
           )}
         >
           {isSettingsActive && (
-            <div className="absolute left-[-13px] top-1/2 -translate-y-1/2 w-[3px] h-4 bg-[#6366f1] rounded-sm" />
+            <div className="absolute left-[-13px] top-1/2 -translate-y-1/2 w-[3px] h-4 bg-[#ef4444] rounded-sm" />
           )}
           <Settings className={cn(
             "w-5 h-5 mr-3 text-center",
-            isSettingsActive ? "text-[#6366f1]" : "text-[#495057] group-hover:text-[#212529]"
+            isSettingsActive ? "text-[#ef4444]" : "text-[#495057] group-hover:text-[#212529]"
           )} />
           設定
         </Link>
