@@ -274,8 +274,8 @@ export default function AppointmentsPage() {
           }
 
           // 檢查是否在第一個項目之前的等待時間
-          if (!isInRestPeriod && todayData.length > 0) {
-            const firstAppointment = todayData[0];
+          if (!isInRestPeriod && todayData.all_bookings && todayData.all_bookings.length > 0) {
+            const firstAppointment = todayData.all_bookings[0];
             const firstStartDateTime = dayjs(firstAppointment.start_time).tz('Asia/Taipei');
             if (now.isBefore(firstStartDateTime)) {
               isInRestPeriod = true;
