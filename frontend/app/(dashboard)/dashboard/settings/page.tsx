@@ -6,8 +6,6 @@ import { Key, Save, Check, CheckCircle, Bot, Plus, X, Store, MapPin, Phone, Buil
 import { createClient } from "@/lib/supabase";
 import dayjs from "dayjs";
 import { useToast } from "@/hooks/use-toast";
-import { Key, Save, Copy, Check, Bot, Plus, X, Store, MapPin, Phone, Building2, Package, FileText, User, Database, Eye, EyeOff, Pen, Calendar, CalendarClock, ExternalLink, MoreHorizontal, Headphones, BookOpen, Bell, Play, Clock } from "lucide-react";
-import { createClient } from "@/lib/supabase";
 import { validateEmployeeSchedules, removeServiceFromEmployees, type EmployeeAdvanceSettings } from "@/lib/booking-logic";
 
 type MainTabType = 'account' | 'basic' | 'third_party' | 'ai' | 'other';
@@ -1519,15 +1517,85 @@ export default function SettingsPage() {
             .select('store_setting, employee_settings, service_settings, booking_rules')
             .eq('user_id', user.id)
             .single();
-      if (error) throw error;
-      alert("預約規則儲存成功！");
-    } catch (error: any) {
-      console.error("Error saving booking rules:", error);
-      alert("儲存失敗：" + error.message);
-    } finally {
-      setBookingSaving(false);
-    }
-  };
+
+          if (settingsError) throw settingsError;
+
+          // Fetch LINE credentials from users table
+          const { data: lineData, error: lineError } = await supabase
+            .from('users')
+            .select('line_channel_access_token, line_channel_secret, ai_settings, username')
+            .eq('id', user.id)
+            .maybeSingle();
+
+          if (lineData) {
+            if (lineData.username) {
+              setCurrentUsername(lineData.username);
+            }
+            setLineConfig(prev => ({
+              ...prev,
+              lineApiKey: lineData.line_channel_access_token || '',
+              lineSecret: lineData.line_channel_secret || ''
+            }));
+
+            if (lineData.ai_settings) {
+              setAiConfig({
+                tone: lineData.ai_settings.tone || 'friendly',
+                customTone: lineData.ai_settings.customTone || '',
+                sampleText: lineData.ai_settings.sampleText || '',
+                rules: lineData.ai_settings.rules || [""],
+                hardcodedRules: lineData.ai_settings.hardcodedRules || {
+                  noHallucination: false,
+                  driveBooking: false,
+                  comfortEmotions: false,
+                  prioritizeStore: false
+                }
+              });
+            }
+          }
+
+          // Load service settings from settings table
+          if (settingsData && settingsData.service_settings) {
+            if (settingsData.service_settings.categories) {
+              setCategories(settingsData.service_settings.categories);
+            }
+            if (settingsData.service_settings.services) {
+              setServiceItems(settingsData.service_settings.services);
+            }
+          }
+
+          // Load employee settings from settings table
+          if (settingsData && settingsData.employee_settings) {
+            setStaffList(settingsData.employee_settings.map((staff: any) => ({ ...staff, collapsed: true })));
+          }
+
+          // Load store settings from settings table
+          if (settingsData && settingsData.store_setting) {
+            const storeSetting = settingsData.store_setting;
+            setStoreConfig({
+              storeName: storeSetting.store_name || '',
+              address: storeSetting.store_address || '',
+              googleMapLink: storeSetting.store_google_maps_url || '',
+              phone: storeSetting.store_phone || '',
+              storeType: storeSetting.store_type || '',
+              storeDescription: storeSetting.store_description || '',
+              storeLocationImage: storeSetting.store_location_image || ''
+            });
+          }
+
+          // Load booking rules from settings table
+          if (settingsData && settingsData.booking_rules) {
+            setBookingRules(settingsData.booking_rules);
+          }
+        }
+      } catch (error: any) {
+        console.error("Error fetching data:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchAllData();
+  }, [supabase]);
 
   const handleEmployeeSettingsSave = async () => {
     setEmployeeSettingsSaving(true);
@@ -1649,82 +1717,12 @@ export default function SettingsPage() {
       }
     }
 
-          // Fetch LINE credentials from users table
-          const { data: lineData, error: lineError } = await supabase
-            .from('users')
-            .select('line_channel_access_token, line_channel_secret, ai_settings, username')
-            .eq('id', user.id)
-            .maybeSingle();
-
-          if (lineData) {
-            if (lineData.username) {
-              setCurrentUsername(lineData.username);
-            }
-            setLineConfig(prev => ({
-              ...prev,
-              lineApiKey: lineData.line_channel_access_token || '',
-              lineSecret: lineData.line_channel_secret || ''
-            }));
-
-            if (lineData.ai_settings) {
-              setAiConfig({
-                tone: lineData.ai_settings.tone || 'friendly',
-                customTone: lineData.ai_settings.customTone || '',
-                sampleText: lineData.ai_settings.sampleText || '',
-                rules: lineData.ai_settings.rules || [""],
-                hardcodedRules: lineData.ai_settings.hardcodedRules || {
-                  noHallucination: false,
-                  driveBooking: false,
-                  comfortEmotions: false,
-                  prioritizeStore: false
-                }
-              });
-            }
-          }
-
-          // Load service settings from settings table
-          if (settingsData && settingsData.service_settings) {
-            if (settingsData.service_settings.categories) {
-              setCategories(settingsData.service_settings.categories);
-            }
-            if (settingsData.service_settings.services) {
-              setServiceItems(settingsData.service_settings.services);
-            }
-          }
-
-          // Load employee settings from settings table
-          if (settingsData && settingsData.employee_settings) {
-            setStaffList(settingsData.employee_settings.map((staff: any) => ({ ...staff, collapsed: true })));
-          }
-
-          // Load store settings from settings table
-          if (settingsData && settingsData.store_setting) {
-            const storeSetting = settingsData.store_setting;
-            setStoreConfig({
-              storeName: storeSetting.store_name || '',
-              address: storeSetting.store_address || '',
-              googleMapLink: storeSetting.store_google_maps_url || '',
-              phone: storeSetting.store_phone || '',
-              storeType: storeSetting.store_type || '',
-              storeDescription: storeSetting.store_description || '',
-              storeLocationImage: storeSetting.store_location_image || ''
-            });
-          }
-
-          // Load booking rules from settings table
-          if (settingsData && settingsData.booking_rules) {
-            setBookingRules(settingsData.booking_rules);
-          }
-        }
-      } catch (error) {
-        console.error("Error fetching data:", error);
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchAllData();
-  }, [supabase]);
+    const newId = Date.now().toString();
+    const newCategories = [...categories, { id: newId, name: "" }];
+    setCategories(newCategories);
+    setEditingCategoryId(newId);
+    setEditingCategoryName("");
+  };
 
   // Fetch appointments data for calendar
   useEffect(() => {
@@ -2189,23 +2187,6 @@ export default function SettingsPage() {
     } finally {
       setBookingSaving(false);
     }
-  };
-
-  const addCategory = async () => {
-    // Remove existing empty category if there is one
-    if (editingCategoryId) {
-      const existingCategory = categories.find(cat => cat.id === editingCategoryId);
-      if (existingCategory && !existingCategory.name.trim()) {
-        const newCategories = categories.filter(cat => cat.id !== editingCategoryId);
-        setCategories(newCategories);
-      }
-    }
-
-    const newId = Date.now().toString();
-    const newCategories = [...categories, { id: newId, name: "" }];
-    setCategories(newCategories);
-    setEditingCategoryId(newId);
-    setEditingCategoryName("");
   };
 
   const saveCategoryEdit = async (id: string) => {
@@ -5744,53 +5725,6 @@ export default function SettingsPage() {
                       </div>
                       <div className="mt-2 pt-2">
                         <div className="h-px bg-gray-400"></div>
-                                        // 服務同步邏輯（第二階段）：從所有技師的 services 陣列中移除該服務 ID
-                                        const updatedEmployeeSettings = removeServiceFromEmployees(employeeSettings, item.id);
-                                        setEmployeeSettings(updatedEmployeeSettings);
-
-                                        // 更新 users 表的 services
-                                        const { error: serviceError } = await supabase
-                                          .from('users')
-                                          .update({
-                                            services: updatedItems
-                                          })
-                                          .eq('id', user.id);
-
-                                        // 更新 settings 表的 employee_settings
-                                        const { data: existingSettings } = await supabase
-                                          .from('settings')
-                                          .select('user_id')
-                                          .eq('user_id', user.id)
-                                          .single();
-
-                                        let employeeError;
-                                        if (existingSettings) {
-                                          const result = await supabase
-                                            .from('settings')
-                                            .update({ employee_settings: updatedEmployeeSettings })
-                                            .eq('user_id', user.id);
-                                          employeeError = result.error;
-                                        } else {
-                                          const result = await supabase
-                                            .from('settings')
-                                            .insert({ user_id: user.id, employee_settings: updatedEmployeeSettings });
-                                          employeeError = result.error;
-                                        }
-
-                                        if (serviceError) console.error("Error deleting service:", serviceError);
-                                        if (employeeError) console.error("Error updating employee settings:", employeeError);
-                                      } catch (error) {
-                                        console.error("Error deleting service:", error);
-                                      }
-                                    }}
-                                    className="p-2 text-red-500 hover:text-red-700 transition-colors"
-                                  >
-                                    <X className="w-5 h-5" />
-                                  </button>
-                                </div>
-                              </div>
-                            </div>
-                          ))}
                       </div>
                     </div>
                   )}
@@ -6170,10 +6104,10 @@ export default function SettingsPage() {
               >
                 確認
               </button>
-              </>
-            )}
+            </div>
           </div>
-        )}
+        </div>
+      )}
 
         {activeMainTab === 'basic' && activeSubTab === 'booking_settings' && (
           <div className="space-y-6">
@@ -6185,8 +6119,7 @@ export default function SettingsPage() {
               <p className="text-gray-600">預約設定功能開發中...</p>
             </div>
           </div>
-        </div>
-      )}
+        )}
       
       {/* 區間日期選擇彈窗 */}
       {showDateRangeModal && (
