@@ -6,6 +6,9 @@ import { Key, Save, Check, CheckCircle, Bot, Plus, X, Store, MapPin, Phone, Buil
 import { createClient } from "@/lib/supabase";
 import dayjs from "dayjs";
 import { useToast } from "@/hooks/use-toast";
+import { Key, Save, Copy, Check, Bot, Plus, X, Store, MapPin, Phone, Building2, Package, FileText, User, Database, Eye, EyeOff, Pen, Calendar, CalendarClock, ExternalLink, MoreHorizontal, Headphones, BookOpen, Bell, Play, Clock } from "lucide-react";
+import { createClient } from "@/lib/supabase";
+import { validateEmployeeSchedules, removeServiceFromEmployees, type EmployeeAdvanceSettings } from "@/lib/booking-logic";
 
 type MainTabType = 'account' | 'basic' | 'third_party' | 'ai' | 'other';
 type SubTabType = 'line' | 'ai_agent' | 'store' | 'services' | 'faq' | 'staff' | 'booking_settings' | 'notification' | 'support' | 'manual';
@@ -308,7 +311,10 @@ export default function SettingsPage() {
     buffer_time: 15
   });
   const [bookingSaving, setBookingSaving] = useState(false);
-  const [bookingSaveSuccess, setBookingSaveSuccess] = useState(false);
+
+  // Employee Advance Settings
+  const [employeeSettings, setEmployeeSettings] = useState<EmployeeAdvanceSettings[]>([]);
+  const [employeeSettingsSaving, setEmployeeSettingsSaving] = useState(false);
 
   // Booking Settings - 員工進階編輯
   const [editingStaffId, setEditingStaffId] = useState<string | null>(null);
@@ -515,6 +521,11 @@ export default function SettingsPage() {
         let startTime = schedule.start;
         let endTime = schedule.end;
         let calculatedDuration = parseInt(schedule.duration || '0');
+          // Load employee settings from settings table
+          if (settingsData && settingsData.employee_settings) {
+            setStaffList(settingsData.employee_settings.map((staff: any) => ({ ...staff, collapsed: true })));
+            setEmployeeSettings(settingsData.employee_settings);
+          }
 
         // V3 資料結構：使用 schedule 欄位
         if (!startTime && schedule.date && booking.time) {
@@ -1508,6 +1519,135 @@ export default function SettingsPage() {
             .select('store_setting, employee_settings, service_settings, booking_rules')
             .eq('user_id', user.id)
             .single();
+      if (error) throw error;
+      alert("預約規則儲存成功！");
+    } catch (error: any) {
+      console.error("Error saving booking rules:", error);
+      alert("儲存失敗：" + error.message);
+    } finally {
+      setBookingSaving(false);
+    }
+  };
+
+  const handleEmployeeSettingsSave = async () => {
+    setEmployeeSettingsSaving(true);
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+
+      // 排班重疊校驗（第四階段）
+      const validation = validateEmployeeSchedules(employeeSettings);
+      if (!validation.isValid) {
+        const errorMessages = validation.errors.map(err => 
+          `${err.employeeName} 的 ${err.day} 排班有重疊時段`
+        ).join('\n');
+        alert(`排班設定有誤：\n${errorMessages}`);
+        return;
+      }
+
+      // Check if settings record exists for this user
+      const { data: existingSettings } = await supabase
+        .from('settings')
+        .select('user_id')
+        .eq('user_id', user.id)
+        .single();
+
+      let error;
+      if (existingSettings) {
+        // Update existing record
+        const result = await supabase
+          .from('settings')
+          .update({ employee_settings: employeeSettings })
+          .eq('user_id', user.id);
+        error = result.error;
+      } else {
+        // Insert new record
+        const result = await supabase
+          .from('settings')
+          .insert({ user_id: user.id, employee_settings: employeeSettings });
+        error = result.error;
+      }
+
+      if (error) throw error;
+      alert("員工進階設定儲存成功！");
+    } catch (error: any) {
+      console.error("Error saving employee settings:", error);
+      alert("儲存失敗：" + error.message);
+    } finally {
+      setEmployeeSettingsSaving(false);
+    }
+  };
+
+  // Helper function to add a new employee
+  const addEmployee = () => {
+    const newEmployee: EmployeeAdvanceSettings = {
+      id: Date.now().toString(),
+      name: '新員工',
+      concurrentServiceCount: 1,
+      booking_horizon: 30,
+      services: [],
+      schedule: {
+        mon: { isOpen: false, timeSlots: [] },
+        tue: { isOpen: false, timeSlots: [] },
+        wed: { isOpen: false, timeSlots: [] },
+        thu: { isOpen: false, timeSlots: [] },
+        fri: { isOpen: false, timeSlots: [] },
+        sat: { isOpen: false, timeSlots: [] },
+        sun: { isOpen: false, timeSlots: [] },
+      }
+    };
+    setEmployeeSettings([...employeeSettings, newEmployee]);
+  };
+
+  // Helper function to remove an employee
+  const removeEmployee = (id: string) => {
+    setEmployeeSettings(employeeSettings.filter(emp => emp.id !== id));
+  };
+
+  // Helper function to update employee field
+  const updateEmployeeField = (id: string, field: keyof EmployeeAdvanceSettings, value: any) => {
+    setEmployeeSettings(employeeSettings.map(emp => 
+      emp.id === id ? { ...emp, [field]: value } : emp
+    ));
+  };
+
+  // Helper function to update employee schedule
+  const updateEmployeeSchedule = (id: string, day: keyof EmployeeAdvanceSettings['schedule'], field: 'isOpen' | 'timeSlots', value: any) => {
+    setEmployeeSettings(employeeSettings.map(emp => 
+      emp.id === id ? { ...emp, schedule: { ...emp.schedule, [day]: { ...emp.schedule[day], [field]: value } } } : emp
+    ));
+  };
+
+  // Helper function to add time slot
+  const addTimeSlot = (employeeId: string, day: keyof EmployeeAdvanceSettings['schedule']) => {
+    setEmployeeSettings(employeeSettings.map(emp => 
+      emp.id === employeeId ? { ...emp, schedule: { ...emp.schedule, [day]: { ...emp.schedule[day], timeSlots: [...emp.schedule[day].timeSlots, { startTime: '09:00', endTime: '18:00' }] } } } : emp
+    ));
+  };
+
+  // Helper function to remove time slot
+  const removeTimeSlot = (employeeId: string, day: keyof EmployeeAdvanceSettings['schedule'], slotIndex: number) => {
+    setEmployeeSettings(employeeSettings.map(emp => 
+      emp.id === employeeId ? { ...emp, schedule: { ...emp.schedule, [day]: { ...emp.schedule[day], timeSlots: emp.schedule[day].timeSlots.filter((_, idx) => idx !== slotIndex) } } } : emp
+    ));
+  };
+
+  // Helper function to update time slot
+  const updateTimeSlot = (employeeId: string, day: keyof EmployeeAdvanceSettings['schedule'], slotIndex: number, field: 'startTime' | 'endTime', value: string) => {
+    setEmployeeSettings(employeeSettings.map(emp => 
+      emp.id === employeeId ? { ...emp, schedule: { ...emp.schedule, [day]: { ...emp.schedule[day], timeSlots: emp.schedule[day].timeSlots.map((slot, idx) => idx === slotIndex ? { ...slot, [field]: value } : slot) } } } : emp
+    ));
+  };
+
+  const addCategory = async () => {
+    // Remove existing empty category if there is one
+    if (editingCategoryId) {
+      const existingCategory = categories.find(cat => cat.id === editingCategoryId);
+      if (existingCategory && !existingCategory.name.trim()) {
+        const newCategories = categories.filter(cat => cat.id !== editingCategoryId);
+        setCategories(newCategories);
+      }
+    }
 
           // Fetch LINE credentials from users table
           const { data: lineData, error: lineError } = await supabase
@@ -5604,6 +5744,53 @@ export default function SettingsPage() {
                       </div>
                       <div className="mt-2 pt-2">
                         <div className="h-px bg-gray-400"></div>
+                                        // 服務同步邏輯（第二階段）：從所有技師的 services 陣列中移除該服務 ID
+                                        const updatedEmployeeSettings = removeServiceFromEmployees(employeeSettings, item.id);
+                                        setEmployeeSettings(updatedEmployeeSettings);
+
+                                        // 更新 users 表的 services
+                                        const { error: serviceError } = await supabase
+                                          .from('users')
+                                          .update({
+                                            services: updatedItems
+                                          })
+                                          .eq('id', user.id);
+
+                                        // 更新 settings 表的 employee_settings
+                                        const { data: existingSettings } = await supabase
+                                          .from('settings')
+                                          .select('user_id')
+                                          .eq('user_id', user.id)
+                                          .single();
+
+                                        let employeeError;
+                                        if (existingSettings) {
+                                          const result = await supabase
+                                            .from('settings')
+                                            .update({ employee_settings: updatedEmployeeSettings })
+                                            .eq('user_id', user.id);
+                                          employeeError = result.error;
+                                        } else {
+                                          const result = await supabase
+                                            .from('settings')
+                                            .insert({ user_id: user.id, employee_settings: updatedEmployeeSettings });
+                                          employeeError = result.error;
+                                        }
+
+                                        if (serviceError) console.error("Error deleting service:", serviceError);
+                                        if (employeeError) console.error("Error updating employee settings:", employeeError);
+                                      } catch (error) {
+                                        console.error("Error deleting service:", error);
+                                      }
+                                    }}
+                                    className="p-2 text-red-500 hover:text-red-700 transition-colors"
+                                  >
+                                    <X className="w-5 h-5" />
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          ))}
                       </div>
                     </div>
                   )}
@@ -5983,6 +6170,19 @@ export default function SettingsPage() {
               >
                 確認
               </button>
+              </>
+            )}
+          </div>
+        )}
+
+        {activeMainTab === 'basic' && activeSubTab === 'booking_settings' && (
+          <div className="space-y-6">
+            <div className="flex items-center mb-4">
+              <Calendar className="w-5 h-5 text-black mr-2" />
+              <h3 className="font-bold text-lg text-gray-900">預約設定</h3>
+            </div>
+            <div className="bg-white border border-gray-200 rounded-lg p-6">
+              <p className="text-gray-600">預約設定功能開發中...</p>
             </div>
           </div>
         </div>
