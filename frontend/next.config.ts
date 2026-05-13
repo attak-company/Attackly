@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  // 保留你原本的 Cloudflare 設定
+  turbopack: {
+    root: __dirname,
+  },
+
   allowedDevOrigins: ['rivers-ment-costs-action.trycloudflare.com'],
 
   // 修正後的 devIndicators 設定
